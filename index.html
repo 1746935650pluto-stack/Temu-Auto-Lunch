@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="通过妙手管理 TEMU 半托管商品发布" />
+    <title>TEMU 上架工作台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.190" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">T</span>
+          <div><strong>temu</strong></div>
+        </div>
+        <nav class="nav" aria-label="主导航">
+          <div class="miaoshou-collection-nav" id="miaoshouCollectionNav">
+            <button type="button" class="nav-item active" id="miaoshouCollectionToggle" aria-expanded="false" aria-controls="miaoshouCollectionChildren"><span>⌘</span>妙手采集箱<span class="collection-nav-chevron" aria-hidden="true">›</span></button>
+            <div class="miaoshou-collection-children" id="miaoshouCollectionChildren" role="group" aria-label="妙手采集箱账号" hidden>
+              <button type="button" class="nav-item active" data-page="workbench" data-account-id="1"><span>1</span>妙手采集箱 1</button>
+              <button type="button" class="nav-item" data-page="collectionAccount" data-account-id="2"><span>2</span>妙手采集箱 2</button>
+              <button type="button" class="collection-nav-add" id="addEmptyCollection">＋ 新增空采集箱</button>
+            </div>
+          </div>
+          <div class="miaoshou-collection-nav" id="orderAccountsNav">
+            <button type="button" class="nav-item" id="orderAccountsToggle" aria-expanded="false" aria-controls="orderAccountsChildren"><span>▤</span>订单中心<span class="collection-nav-chevron" aria-hidden="true">›</span></button>
+            <div class="miaoshou-collection-children" id="orderAccountsChildren" role="group" aria-label="订单中心账号" hidden>
+              <button type="button" class="nav-item" data-page="orders" data-order-account-id="1"><span>1</span>妙手采集箱 1</button>
+              <button type="button" class="nav-item" data-page="orders" data-order-account-id="2"><span>2</span>妙手采集箱 2</button>
+            </div>
+          </div>
+          <button class="nav-item" data-page="zhihou"><span>ZH</span>智猴物流</button>
+          <button class="nav-item" data-page="pricing"><span>¥</span>自动核价</button>
+          <button class="nav-item" data-page="collectionAutomation"><span>⇣</span>自动化采集</button>
+          <button class="nav-item" data-page="automation"><span>⚡</span>自动化池</button>
+          <button class="nav-item" data-page="automaticTasks"><span>▶</span>自动任务</button>
+          <button class="nav-item" data-page="tasks"><span>◷</span>任务中心 <b id="taskBadge" class="hidden" title="已提交的自动化任务数">0</b></button>
+          <button class="nav-item" data-page="publishRecords"><span>◫</span>发布记录</button>
+          <button class="nav-item" data-page="settings"><span>⚙</span>接口设置</button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
+          <span class="app-version" data-resource-version="1.2.190">当前版本 V1.2.190</span>
+        </div>
+      </aside>
+      <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="crumb"><span>商品发布</span><em>/</em><strong id="crumbProduct">新建 TEMU 半托管上架任务</strong></div>
+          <div class="top-actions">
+            <button class="icon-button" id="resetDemo" title="重置演示数据">↻</button>
+            <button class="avatar" title="当前用户">LC</button>
+          </div>
+        </header>
+
+        <div class="collection-context-bar">
+          <strong id="currentCollectionAccount">当前账号：妙手采集箱 1</strong>
+          <button type="button" class="button subtle" id="syncCollectionInfo">手动同步信息</button>
+          <button type="button" class="button primary" id="syncCollectionPool" disabled>全箱一键同步到自动化池</button>
+          <button type="button" class="button subtle" id="openCollectionOrders">查看对应订单中心</button>
+          <p id="collectionSyncStatus" role="status" aria-live="polite">刷新先读本机缓存，再按页增量校对；各采集箱独立。手动同步会重新读取当前页、配置和订单，不保存或发布商品。</p>
+          <div class="collection-sync-panel">
+            <label class="collection-sync-toggle"><input type="checkbox" id="hourlyCollectionSync" disabled />每小时同步采集箱、自动化池和订单（全部已配置账号）</label>
+            <span id="collectionSyncNext" class="collection-sync-next"></span>
+            <p id="collectionPoolSyncStatus" role="status" aria-live="polite">正在读取同步状态…</p>
+            <details id="collectionPoolSyncFailures" hidden><summary>查看同步问题</summary><ul></ul></details>
+          </div>
+        </div>
+
+        <section class="page active" id="workbench">
+          <section class="panel live-panel hidden" id="livePanel" aria-label="妙手实时商品">
+            <section class="live-flow-card" id="editorFlowCard" aria-label="商品编辑流程">
+              <div class="live-flow-header"><span>当前工作流</span><strong id="liveFlowState">等待选择商品</strong></div>
+              <div class="live-flow">
+                <button class="live-flow-step" type="button" data-flow-step="2"><span>01</span><b>店铺认领</b><small>选择目标店铺</small></button>
+                <div class="live-flow-line"></div>
+                <button class="live-flow-step" type="button" data-flow-step="3"><span>02</span><b>编辑资料</b><small>类目、属性与物流</small></button>
+                <div class="live-flow-line"></div>
+                <button class="live-flow-step" type="button" data-flow-step="4"><span>03</span><b>标题与图片</b><small>编辑标题与商品图片</small></button>
+                <div class="live-flow-line"></div>
+                <button class="live-flow-step" type="button" data-flow-step="5"><span>04</span><b>SKU 变体</b><small>价格、库存与尺寸</small></button>
+                <div class="live-flow-line"></div>
+                <button class="live-flow-step" type="button" data-flow-step="6"><span>05</span><b>规则校验</b><small>站点、物流与库存</small></button>
+                <div class="live-flow-line"></div>
+                <button class="live-flow-step" type="button" data-flow-step="7"><span>06</span><b>提交发布</b><small>妙手 → TEMU 半托</small></button>
+              </div>
+            </section>
+            <div class="pane-resizer source-pane-resizer" id="sourcePaneResizer" role="separator" aria-label="调整采集箱宽度" aria-orientation="vertical" title="拖动调整采集箱宽度"></div>
+            <div class="live-main collect-box-main">
+              <div id="liveSourceStep">
+                <div class="live-source-content" tabindex="0" role="region" aria-label="商品操作与筛选">
+                <div class="live-item-actions"><button class="button primary" id="liveNew">＋ 新建商品</button><button class="button subtle" id="liveEdit" disabled>编辑已选商品</button><button class="button subtle" id="liveAddAutomation" type="button" disabled>加入自动化池</button><span class="live-pool-selected-count" id="livePoolSelectedCount">未选入池商品</span></div>
+                <p class="live-transfer-status hidden" id="livePoolTransferStatus" role="status" aria-live="polite"></p>
+                <p class="live-cache-status" id="liveCacheStatus" role="status" aria-live="polite"></p>
+                <div class="live-controls live-source-search">
+                  <label>采集箱 ID / 产品名称搜索<input id="liveKeyword" type="search" maxlength="200" placeholder="输入采集箱 ID 或产品名称，留空显示全部" title="纯数字按 ID 精确查询；其他文字按名称包含匹配，英文不区分大小写。可与所属人员筛选组合。" /></label>
+                  <button class="button subtle" id="liveSearch">查询商品</button>
+                </div>
+                <div class="live-collector-controls">
+                  <label for="liveCollectorFilter">所属人员<select id="liveCollectorFilter"><option value="">全部人员</option></select></label>
+                  <div class="live-collector-actions"><button class="button subtle" id="liveRefreshPeople" type="button" title="读取整个采集箱的人员，并刷新筛选结果">刷新人员</button><button class="button subtle" id="liveEditPeople" type="button">人员备注</button></div>
+                  <p id="liveCollectorStatus" role="status" aria-live="polite">未匹配姓名时显示账号 ID；筛选覆盖整个采集箱。</p>
+                </div>
+                <div class="live-list-batch-actions"><label><input id="livePoolSelectAll" type="checkbox" /> 全选本页商品</label><button class="button ghost" id="livePoolClearSelection" type="button">清空入池选择</button></div>
+                </div>
+                <div class="live-list" id="liveProducts" tabindex="0" role="region" aria-label="采集箱商品列表"><p class="live-empty">正在读取商品…</p></div>
+                <div class="live-page-tools live-page-tools-bottom">
+                  <span id="livePageLabel">第 1 页</span>
+                  <div class="live-page-navigation">
+                  <label class="live-page-size"><span class="sr-only">每页数量</span><select id="livePageSize" aria-label="每页数量"><option value="20">20 件/页</option><option value="50" selected>50 件/页</option><option value="100">100 件/页</option></select></label>
+                  <label class="live-page-jump"><span class="sr-only">跳转页码</span><input id="livePageInput" type="number" min="1" step="1" inputmode="numeric" placeholder="页码" /></label>
+                  <button class="button subtle" id="livePageGo" type="button">跳转</button>
+                  <button class="button subtle" id="livePrev" type="button" disabled>上一页</button>
+                  <button class="button subtle" id="liveNext" type="button">下一页</button>
+                  </div>
+                </div>
+              </div>
+              <div class="live-detail">
+                <section class="live-workflow-section" id="liveValidationStep">
+                  <h3>发布前检查</h3>
+                  <p class="live-empty" id="liveSelection">请从左侧选择一个商品。</p>
+                  <div class="live-target-config hidden" id="liveTargetConfig">
+                    <p>第 6 步：选择发布目标后，系统将按此店铺和站点校验物流、仓库及上架条件。</p>
+                    <div>
+                      <label>目标店铺 <span class="required">*</span><select id="liveShop"><option value="">加载店铺中…</option></select></label>
+                      <label>发布站点 <span class="required">*</span><select id="liveSite"><option value="">加载站点中…</option></select></label>
+                    </div>
+                  </div>
+                  <div id="liveReadiness" class="hidden"></div>
+                  <button class="button subtle" id="liveRecheck" disabled>重新检查资料</button>
+                </section>
+                <section class="live-workflow-section live-publish-section" id="livePublishStep">
+                  <h3>第 7 步：提交发布</h3>
+                  <button class="button primary live-publish" id="livePublish" disabled>通过妙手提交发布</button>
+                  <p class="live-hint" id="livePublishHint">选择商品后，会核对妙手中已保存的资料。</p>
+                </section>
+              </div>
+            </div>
+            <section class="live-editor hidden" id="liveEditor" aria-label="半托管商品编辑器">
+              <div class="live-editor-head"><div><p class="eyebrow">PRODUCT EDITOR</p><h3 id="liveEditorTitle">编辑商品</h3></div><button class="button subtle" id="liveEditorClose" type="button">关闭</button></div>
+              <p class="live-note" id="liveEditorNote">只保存到妙手半托管采集箱，不会自动发布。</p>
+              <form id="liveItemForm">
+                <section class="live-claim-editor live-workflow-editor-section" id="liveClaimStep" aria-labelledby="liveClaimTitle">
+                  <div class="workflow-editor-head"><div><p class="eyebrow">02 / STORE CLAIM</p><h4 id="liveClaimTitle">店铺认领</h4><p>选择一个或多个目标店铺并先提交到妙手；成功后才可继续编辑商品资料。</p></div></div>
+                  <div class="claim-shop-list" id="claimShopChecks"></div>
+                  <p class="claim-status hidden" id="shopClaimStatus" role="status" aria-live="polite"></p>
+                  <div class="claim-editor-actions"><button class="button primary" type="button" id="submitShopClaim">提交店铺认领到妙手</button></div>
+                </section>
+                <section class="live-workflow-editor-section" id="liveDetailsStep">
+                  <div class="workflow-editor-head"><div><p class="eyebrow">03 / PRODUCT DATA</p><h4>编辑商品资料</h4><p>可认领多个目标店铺；请逐个选择店铺并完成各自的物流配置。</p></div></div>
+                  <div class="live-form-grid">
+                  <div class="live-details-column live-details-primary">
+                  <label>当前配置店铺 <span class="required">*</span><select id="editShop" required></select></label>
+                  <label>发布站点 <span class="required">*</span><select id="editSite" required></select></label>
+                  <div class="live-category-field" id="categoryField">
+                    <span class="field-label">产品类别 <span class="required">*</span></span>
+                    <input id="editCid" type="hidden" />
+                    <button class="category-trigger" id="categoryTrigger" type="button" aria-expanded="false" aria-controls="categoryPicker"><span id="categoryPath">选择产品类别</span><span aria-hidden="true">⌄</span></button>
+                    <div class="category-picker hidden" id="categoryPicker" role="dialog" aria-label="选择产品类别"><div class="category-columns" id="categoryColumns"></div></div>
+                    <small class="category-hint" id="categoryHint">按层级选择，最后一级会自动保存为妙手类目。</small>
+                  </div>
+                  <section class="live-attributes" aria-labelledby="liveAttributesTitle">
+                    <div class="live-attributes-head"><div><h4 id="liveAttributesTitle">商品属性</h4><p id="liveAttributesHint">属性会随当前商品的类目自动变化。</p></div></div>
+                    <div id="editAttributeFields" class="live-attribute-fields"></div>
+                  </section>
+                  </div>
+                  <div class="live-details-column live-details-secondary">
+                  <section class="claimed-shops-summary"><span class="field-label">目标店铺 <span class="required">*</span></span><div id="claimedShopsSummary"></div></section>
+                  <label>运费模板 <span class="required">*</span><select id="editFreight" required><option value="">先选择店铺和站点</option></select></label>
+                  <label>发货仓库 <span class="required">*</span><select id="editWarehouse" required><option value="">先选择店铺和站点</option></select></label>
+                  <label>原产国编码 <span class="required">*</span><input id="editCountry" required placeholder="如 CN" /></label>
+                  <label>原产省编码（中国商品必填）<input id="editProvince" placeholder="从妙手商品详情获取" /></label>
+                  <label>制造地点（国家/地区简称）<input id="editManufacturingLocations" placeholder="如 CN；留空时沿用原产国" /></label>
+                  <label class="product-description-field">产品描述<textarea id="editDescription" rows="6" placeholder="填写产品描述"></textarea></label>
+                  </div>
+                  </div>
+                </section>
+                <section class="live-media-editor live-workflow-editor-section" id="liveMediaStep" aria-labelledby="liveMediaEditorTitle">
+                    <div class="live-media-editor-head"><div><p class="eyebrow">04 / TITLE &amp; IMAGES</p><h4 id="liveMediaEditorTitle">标题与商品图片</h4><p>在此编辑标题，添加、替换或删除商品图片。本地不限制图片张数，最终以妙手接口校验为准。</p></div></div>
+                  <div class="live-media-grid">
+                    <div class="title-edit-field"><div class="title-field-head"><label for="editTitle">商品标题 <span class="required">*</span></label><button class="ai-polish-trigger" type="button" id="polishChineseTitle">✦ AI 润色</button></div><input id="editTitle" required maxlength="250" /><small class="title-weight-count" id="editTitleCount">0 / 240 加权字符</small></div>
+                    <div class="title-edit-field"><div class="title-field-head"><label for="editEnglishTitle">英文标题 <span class="required">*</span></label><button class="ai-polish-trigger" type="button" id="polishEnglishTitle">✦ AI 润色</button></div><input id="editEnglishTitle" required maxlength="250" placeholder="English product title" /><small class="title-weight-count" id="editEnglishTitleCount">0 / 240 加权字符</small></div>
+                  </div>
+                  <section class="ai-title-polish hidden" id="aiTitlePolish" aria-live="polite"><div><strong id="aiTitlePolishLabel">AI 标题润色结果</strong><small id="aiTitlePolishPrompt">默认提示词：生成适合 TEMU 卖点字段的标题，含使用场景词缀；目标 230-240 加权字符（中文计 2）。</small><small id="aiTitlePolishMeta">结果已自动覆盖当前标题；可继续修改下方内容，再次覆盖标题。</small></div><textarea id="aiTitlePolishDraft" rows="3" maxlength="250" aria-label="AI 润色结果"></textarea><div class="ai-title-polish-actions"><button class="button subtle" type="button" id="discardTitlePolish">关闭结果</button><button class="button primary" type="button" id="applyTitlePolish">用修改稿覆盖标题</button></div></section>
+                  <div class="product-images-field"><span class="field-label">商品图片</span><small class="image-order-hint">按住图片拖动到另一张图片上，可交换顺序。</small><textarea id="editImages" class="hidden" aria-hidden="true"></textarea><div class="product-image-preview" id="productImagePreview" aria-live="polite"></div><div class="product-image-add"><label><span>图片链接</span><input id="productImageUrl" type="url" placeholder="粘贴图片 URL 后添加" /></label><button class="button subtle" type="button" id="addProductImage">＋ 添加图片</button></div></div>
+                  <div class="description-images-field"><span class="field-label">描述图片</span><small>已从妙手同步；可替换、删除或新增详情图片。按住图片拖动到另一张图片上，可交换顺序。</small><div class="description-image-preview" id="descriptionImagePreview" aria-live="polite"></div><div class="product-image-add"><label><span>图片链接</span><input id="descriptionImageUrl" type="url" placeholder="粘贴详情图片 URL 后添加" /></label><div class="description-image-actions"><button class="button subtle" type="button" id="uploadDescriptionImage">⇧ 本地上传</button><button class="button subtle" type="button" id="addDescriptionImage">＋ 添加描述图片</button></div></div><input id="descriptionImageLocal" type="file" accept="image/*" multiple class="hidden" /></div>
+                </section>
+                <section class="live-sku-editor live-workflow-editor-section" id="liveSkuStep" aria-labelledby="liveSkuEditorTitle">
+                  <div class="live-skus-head"><div><p class="eyebrow">05 / SKU VARIANTS</p><h4 id="liveSkuEditorTitle">SKU / 变体</h4><p>按妙手表格方式管理变体。图片直接预览；点击“更换图片”可编辑链接。价格为人民币，尺寸 cm，重量 g。</p></div><button class="button subtle" type="button" id="toggleSkuBatch">批量填写</button></div>
+                  <section class="sku-batch-panel hidden" id="skuBatchPanel" aria-label="批量填写 SKU">
+                    <div class="sku-batch-head"><strong>批量填写 SKU</strong><span>只会更新已填写的字段，留空的字段保持不变。</span></div>
+                    <div class="sku-batch-fields">
+                      <label>申报价（人民币）<input id="batchSkuPrice" type="number" min="0" step="0.01" placeholder="不修改" /></label>
+                      <label>库存<input id="batchSkuStock" type="number" min="0" step="1" placeholder="不修改" /></label>
+                      <label>重量（g）<input id="batchSkuWeight" type="number" min="0" step="1" placeholder="不修改" /></label>
+                      <label>长（cm）<input id="batchSkuLength" type="number" min="0" step="0.01" placeholder="不修改" /></label>
+                      <label>宽（cm）<input id="batchSkuWidth" type="number" min="0" step="0.01" placeholder="不修改" /></label>
+                      <label>高（cm）<input id="batchSkuHeight" type="number" min="0" step="0.01" placeholder="不修改" /></label>
+                      <button class="button primary" type="button" id="applySkuBatch">应用到全部 SKU</button>
+                    </div>
+                  </section>
+                  <section class="sku-spec-editor" aria-labelledby="skuSpecEditorTitle">
+                    <div class="sku-spec-head"><div><h5 id="skuSpecEditorTitle">SKU 规格</h5><p>可修改规格名称和规格值；新增或删除规格值后，对应 SKU 会同步调整。</p></div><button class="button subtle" type="button" id="addSkuSpec">＋ 新增规格</button></div>
+                    <div class="sku-spec-groups" id="skuSpecGroups"></div>
+                  </section>
+                  <div id="editSkuRows" class="live-sku-rows"></div>
+                </section>
+                <details class="live-advanced"><summary>高级资料：类目属性、规格与尺码表（JSON）</summary><p>新建空白商品时，须按妙手类目规则补齐属性和规格。尺码表保存报错时，可在此检查对应尺码行的 groupIdAndValueMap。</p><div class="live-form-grid"><label class="wide">类目属性 attributes<textarea id="editAttributes" rows="7" spellcheck="false"></textarea></label><label class="wide">销售规格 saleAttributes<textarea id="editSaleAttributes" rows="7" spellcheck="false"></textarea></label><label class="wide">尺码表 sizeCharts<textarea id="editSizeCharts" rows="9" spellcheck="false"></textarea></label></div></details>
+                <p id="liveEditorError" class="live-error hidden"></p>
+                <div class="live-editor-actions"><button class="button subtle" type="button" id="editCancel">取消</button><button class="button primary" type="submit" id="editSave">保存到妙手采集箱</button></div>
+              </form>
+            </section>
+          </section>
+
+          <section class="pipeline-card" aria-label="上架进度">
+            <div class="pipeline-header"><span>当前工作流</span><strong id="pipelineState">等待选择商品</strong></div>
+            <div class="pipeline" id="pipeline">
+              <div class="pipeline-step active" data-step="1"><span>01</span><b>选择货源</b><small>商品与变体</small></div>
+              <div class="pipeline-line"></div>
+              <div class="pipeline-step" data-step="2"><span>02</span><b>生成内容</b><small>标题与卖点</small></div>
+              <div class="pipeline-line"></div>
+              <div class="pipeline-step" data-step="3"><span>03</span><b>规则校验</b><small>价格与物流</small></div>
+              <div class="pipeline-line"></div>
+              <div class="pipeline-step" data-step="4"><span>04</span><b>提交发布</b><small>妙手 → TEMU 半托</small></div>
+            </div>
+          </section>
+
+          <section class="workspace-grid">
+            <div class="panel source-panel">
+              <div class="panel-title"><div><p class="eyebrow">01 / SOURCE</p><h2>商品货源</h2></div><span class="source-tag">妙手供应链</span></div>
+              <div class="source-empty" id="sourceEmpty">
+                <div class="empty-icon">↧</div>
+                <h3>从妙手同步商品</h3>
+                <p>配置授权后，可从妙手公共采集箱同步商品并创建半托管采集箱商品。</p>
+                <button class="button primary" id="openProductPicker">选择商品</button>
+              </div>
+              <div class="selected-product hidden" id="selectedProduct"></div>
+            </div>
+
+            <div class="panel task-panel">
+              <div class="panel-title"><div><p class="eyebrow">LIVE / TASKS</p><h2>执行状态</h2></div><span class="status-pill neutral" id="taskStatus">未开始</span></div>
+              <div class="task-list" id="taskList">
+                <div class="task-row"><span class="task-index">1</span><div><b>读取商品资料</b><small>等待商品选择</small></div><span class="task-result pending">—</span></div>
+                <div class="task-row"><span class="task-index">2</span><div><b>AI 生成商品内容</b><small>等待资料完整</small></div><span class="task-result pending">—</span></div>
+                <div class="task-row"><span class="task-index">3</span><div><b>校验半托管配置</b><small>类目、站点、物流与仓库</small></div><span class="task-result pending">—</span></div>
+                <div class="task-row"><span class="task-index">4</span><div><b>提交半托管发布</b><small>通过妙手执行</small></div><span class="task-result pending">—</span></div>
+              </div>
+              <div class="info-box">真实接入时，密钥只保存于服务端；所有商品同步与 TEMU 草稿操作均通过妙手完成。</div>
+            </div>
+          </section>
+
+          <section class="panel editor-panel" id="editorPanel">
+            <div class="panel-title"><div><p class="eyebrow">02 / CONTENT &amp; RULES</p><h2>上架资料</h2></div><div class="panel-actions"><button class="button subtle" id="generateContent" disabled>✦ AI 生成内容</button><button class="button primary" id="validateListing" disabled>校验并继续</button></div></div>
+            <div class="editor-locked" id="editorLocked"><span>请先选择一个货源商品，开始生成上架资料。</span></div>
+            <form class="listing-form hidden" id="listingForm">
+              <div class="form-section content-section">
+                <div class="section-head"><h3>商品内容</h3><p>可随时修改，提交前会做必填项检查。</p></div>
+                <label>英文商品标题 <span class="required">*</span><span class="count" id="titleCount">0 / 180</span><textarea id="listingTitle" maxlength="180" rows="2" placeholder="点击 AI 生成，或自行填写标题"></textarea></label>
+                <div class="two-columns">
+                  <label>商品亮点 <span class="required">*</span><textarea id="bulletPoints" rows="6" placeholder="每行一个卖点"></textarea></label>
+                  <label>商品描述 <span class="required">*</span><textarea id="description" rows="6" placeholder="商品描述将在此显示"></textarea></label>
+                </div>
+              </div>
+              <div class="form-section rule-section">
+                <div class="section-head"><h3>定价与物流</h3><p>建议价基于设定成本和目标毛利自动计算。</p></div>
+                <div class="four-columns">
+                  <label>采购成本 (USD)<input type="number" id="cost" min="0" step="0.01" /></label>
+                  <label>目标毛利率<input type="number" id="margin" min="0" max="95" step="1" value="35" /></label>
+                  <label>建议售价 (USD)<input type="number" id="price" min="0" step="0.01" /></label>
+                  <label>发货时效<select id="shipping"><option value="3-5">3–5 个工作日</option><option value="5-7">5–7 个工作日</option><option value="7-10">7–10 个工作日</option></select></label>
+                </div>
+                <div class="three-columns">
+                  <label>包裹重量 (kg)<input type="number" id="weight" min="0" step="0.01" /></label>
+                  <label>包装尺寸 (cm)<input type="text" id="dimensions" placeholder="长 × 宽 × 高" /></label>
+                  <label>TEMU 类目<select id="category"><option value="">请选择类目</option><option value="Pet Supplies">Pet Supplies</option><option value="Home & Kitchen">Home &amp; Kitchen</option><option value="Beauty & Health">Beauty &amp; Health</option></select></label>
+                </div>
+                <div class="skus" id="skuList"></div>
+              </div>
+            </form>
+          </section>
+        </section>
+
+        <section class="page" id="collectionAccount">
+          <div class="simple-page collection-account-page">
+            <p class="eyebrow">MIAOSHOU / ACCOUNT SETUP</p>
+            <h1 id="collectionAccountTitle">妙手采集箱 2</h1>
+            <p id="collectionAccountDescription">配置独立 API 后即可同步商品、店铺和订单，使用完整采集箱工作流。</p>
+            <div class="integration-card"><div class="integration-logo" id="collectionAccountLogo">2</div><div><h3 id="collectionAccountCardTitle">妙手采集箱 2</h3><p id="collectionAccountCardDescription">尚未接入独立妙手开放平台 API。</p></div><span class="status-pill neutral" id="collectionAccountStatus">待接入</span></div>
+            <form id="collectionCredentialForm" class="collection-credential-form" autocomplete="off">
+              <div class="collection-credential-fields">
+                <label for="collectionAppKey">App Key<input id="collectionAppKey" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写此采集箱的 App Key" /></label>
+                <label for="collectionAppSecret">App Secret<input id="collectionAppSecret" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写此采集箱的 App Secret" /></label>
+              </div>
+              <button type="submit" class="button primary" id="saveCollectionCredentials">保存 API 配置</button>
+              <p>仅保存到本机 .env，密钥不回显、不存入浏览器缓存。保存后立即生效，无需重启。</p>
+            </form>
+            <div class="code-note" id="collectionAccountGuide">先保存此采集箱独立的 API，再点击同步信息。同步仅读取妙手并缓存到本机，不会保存或发布商品。</div>
+            <p id="collectionCredentialStatus" role="status" aria-live="polite"></p>
+            <button type="button" class="button subtle" id="configureCollectionSync">检查配置并同步信息</button>
+            <div class="collection-account-actions"><button type="button" class="button subtle" id="deleteEmptyCollection" hidden>删除空采集箱</button><p>仅能删除未配置 API 的空账号入口；不会删除妙手商品。默认采集箱 1 保留。</p></div>
+          </div>
+        </section>
+
+        <section class="page" id="collectionAutomation">
+          <div class="simple-page">
+            <p class="eyebrow">AUTOMATION / COLLECTION</p>
+            <h1>自动化采集</h1>
+            <p>用于配置外部商品来源、采集规则与结果预览。当前仅提供模块框架，尚未接入任何采集平台、定时任务或数据写入。</p>
+            <div class="integration-card"><div class="integration-logo">⌁</div><div><h3>外部采集来源</h3><p>等待选择采集平台、链接或关键词规则；接入后再确定是否写入本地自动化池。</p></div><span class="status-pill neutral">未配置</span></div>
+            <div class="code-note">当前模块不会读取妙手采集箱，不会抓取外部商品，也不会创建、编辑或发布任何商品。</div>
+          </div>
+        </section>
+
+        <section class="page" id="automation">
+          <div class="automation-page">
+            <div class="automation-head"><div><p class="eyebrow">AUTOMATION / STAGING POOL</p><h1>自动化池</h1><p>从采集箱入池；可多选商品并发同步到店铺、编辑和保存，保存后由你在任务中心统一发布。</p></div><button class="button subtle" id="refreshAutomationPool" type="button">刷新池子</button></div>
+            <div class="automation-stage"><span class="automation-stage-number">01</span><div><strong>采集箱 → 自动化池</strong><p>已入池 <b id="automationPoolCount">0</b> 件商品，保存了妙手商品完整资料快照。</p></div></div>
+            <div class="automation-claim-panel">
+              <div class="automation-stage-title"><span class="automation-stage-number">02</span><div><strong>确认店铺并批量编辑保存</strong><p>统一使用「通用」运费模板、「发货」仓库；AI 润色中英文标题，并根据原标题、类目和现有资料补全缺失必填属性，无法可靠识别的字段会提示补充资料。保留首图，其余图片打乱后最多取 9 张提交妙手，本地快照保留全部图片。申报价可按固定下限 X 到 X+20 元随机生成，或按本地快照中每个 SKU 的原始价格乘倍数计算（保留两位小数）；库存 1000。保存后会读回核对关键字段，确认一致才进入发布队列。商品会并发编辑并保存到妙手，随后停在任务中心等待你统一发布。</p></div></div>
+              <div class="personnel-routing-controls">
+                <label>保存方式<select id="automationTargetMode"><option value="manual">手动选择店铺</option><option value="personnel">按所属人员绑定</option></select></label>
+                <button class="button subtle" id="automationPersonnelBindings" type="button">人员店铺绑定</button>
+                <button class="button subtle" id="automationPersonnelRefresh" type="button">刷新人员归属</button>
+                <p id="automationPersonnelStatus" role="status" aria-live="polite">对应妙手采集箱 1；绑定仅保存在本机，不会自动执行任务。</p>
+              </div>
+              <div class="automation-claim-controls">
+                <label>目标店铺（可多选）<select id="automationClaimShop" multiple size="5" aria-describedby="automationShopHint"><option value="" disabled>正在加载店铺…</option></select><small id="automationShopHint">按住 Ctrl 点击多选；每件商品保存到全部选中店铺</small></label>
+                <label>发布站点<select id="automationPublishSite"><option value="">正在加载站点…</option></select></label>
+                <label>申报价方式<select id="automationPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始价格 × 倍数</option></select></label>
+                <label class="automation-price-label" id="automationPriceFloorLabel">SKU 申报价下限 X（人民币）<input id="automationSkuPrice" type="number" min="0.01" max="999980" step="0.01" value="160" inputmode="decimal" /></label>
+                <label class="automation-price-label" id="automationPriceMultiplierLabel" hidden>原始价格倍数<input id="automationPriceMultiplier" type="number" min="0.0001" max="1000" step="0.0001" value="1.5" inputmode="decimal" disabled /></label>
+                <label class="automation-concurrency-label">同时编辑任务数<input id="automationEditConcurrency" type="number" min="1" step="1" value="8" inputmode="numeric" /></label>
+                <span id="automationSelectedCount" class="automation-selected-count">未选商品</span>
+                <button class="button primary" id="automationClaimSubmit" type="button" disabled>确认并批量编辑保存</button>
+                <button class="button subtle" id="automationBatchRemove" type="button" disabled>批量移出池子</button>
+                <button class="button subtle" id="automationOpenTasks" type="button">查看任务进度</button>
+              </div>
+              <div class="automation-batch-selection"><label class="automation-select-all"><input id="automationSelectAll" type="checkbox" /><span>全选本页可处理商品</span></label><button class="button ghost" id="automationClearSelection" type="button">清空选择</button></div>
+              <p id="automationClaimFeedback" class="automation-claim-feedback hidden" role="status" aria-live="polite"></p>
+            </div>
+            <div class="automation-pool-filters task-save-filters" role="group" aria-label="店铺同步状态筛选">
+              <button type="button" class="task-save-filter active" data-automation-claim-filter="all" aria-pressed="true">全部 <span id="automationClaimAllCount">0</span></button>
+              <button type="button" class="task-save-filter" data-automation-claim-filter="pending" aria-pressed="false">待同步到店铺 <span id="automationClaimPendingCount">0</span></button>
+              <button type="button" class="task-save-filter" data-automation-claim-filter="claimed" aria-pressed="false">已同步到店铺 <span id="automationClaimedCount">0</span></button>
+            </div>
+            <nav class="automation-pool-pagination" aria-label="自动化池分页">
+              <span id="automationPoolPageLabel" aria-live="polite">第 1 / 1 页 · 每页 50 件</span>
+              <button class="button subtle" id="automationPoolPrev" type="button" disabled>上一页</button>
+              <label>页码 <input id="automationPoolPageInput" type="number" min="1" max="1" step="1" value="1" inputmode="numeric" /></label>
+              <button class="button subtle" id="automationPoolPageGo" type="button">跳转</button>
+              <button class="button subtle" id="automationPoolNext" type="button" disabled>下一页</button>
+              <small>每页 50 件，翻页清空选择</small>
+            </nav>
+            <div id="automationPoolList" class="automation-pool-list"><p class="live-empty">正在读取自动化池…</p></div>
+          </div>
+        </section>
+        <section class="page" id="automaticTasks">
+          <div class="headline"><div><p class="eyebrow">POOL → EDIT → PUBLISH</p><h1>自动任务</h1><p class="subhead">从自动化池选取指定数量，自动编辑、保存并提交发布。每个任务对应一家店铺。</p></div><button type="button" class="button subtle" id="autoTaskRefresh">刷新</button></div>
+          <form id="autoTaskForm" class="auto-task-card">
+            <h2>创建任务</h2>
+            <div class="auto-task-grid">
+              <label>来源采集箱<select id="autoTaskSource" disabled></select></label>
+              <label>所属人员<select id="autoTaskPerson" disabled></select></label>
+              <label>发布店铺<select id="autoTaskShop" required disabled></select></label>
+              <label>发布站点<select id="autoTaskSite" required disabled></select></label>
+              <label>每轮商品数量<input id="autoTaskCount" type="number" min="1" max="500" step="1" value="100" required /></label>
+              <label>执行方式<select id="autoTaskMode"><option value="now">立即执行</option><option value="once">指定时间执行一次</option><option value="interval">按间隔重复执行</option></select></label>
+              <label id="autoTaskTimeField" hidden>开始时间（北京时间）<input id="autoTaskTime" type="datetime-local" /></label>
+              <label id="autoTaskEveryField" hidden>重复间隔（分钟）<input id="autoTaskEvery" type="number" min="5" max="10080" step="1" value="60" /></label>
+              <label>申报价方式<select id="autoTaskPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始 SKU 价格倍数</option></select></label>
+              <label id="autoTaskPriceField">申报价下限 X<input id="autoTaskPrice" type="number" min="0.01" step="0.01" value="160" /></label>
+              <label id="autoTaskMultiplierField" hidden>原始 SKU 价格倍数<input id="autoTaskMultiplier" type="number" min="0.01" step="0.01" value="1.5" /></label>
+              <label>发布间隔（秒）<input id="autoTaskPublishInterval" type="number" min="1" max="600" step="1" value="1" required /></label>
+            </div>
+            <p class="auto-task-note">优先处理较早入池商品，跳过已有任务或发布记录的组合。可用数量不足时整轮不提交；编辑失败不擅自换商品补足。定时是启动时间，发布需等待编辑完成。电脑及后台需保持运行。</p>
+            <label class="auto-task-consent"><input id="autoTaskConfirm" type="checkbox" required />我确认本任务会自动编辑并向所选店铺真实发布，无需再次手动确认。</label>
+            <div class="auto-task-actions"><button type="submit" id="autoTaskSubmit" class="button primary" disabled>立即执行：编辑并发布</button><button type="button" id="autoTaskCenter" class="button subtle">查看任务中心</button></div>
+            <p id="autoTaskMessage" role="status" aria-live="polite">正在读取配置…</p>
+          </form>
+          <h2 class="auto-task-list-title">任务与执行记录</h2>
+          <p id="autoTaskListMessage" role="status" aria-live="polite"></p>
+          <div id="autoTaskList"></div>
+        </section>
+
+        <section class="page" id="tasks">
+          <div class="simple-page task-center-page">
+            <div class="task-center-head"><div><p class="eyebrow">TASK CENTER</p><h1>任务中心</h1></div><div><button class="button subtle" id="selectAllAutomationJobs" type="button" disabled>全选已结束记录</button><button class="button subtle" id="deleteAutomationJobsBatch" type="button" disabled>批量删除记录</button><button class="button subtle" id="clearAutomationJobs" type="button" disabled title="停止编辑保存任务并清空本地编辑记录；发布队列会保留并继续发布">停止编辑并清空列表</button><button class="button subtle" id="refreshAutomationJobs" type="button">刷新进度</button></div></div>
+            <p id="automationJobFeedback" class="automation-claim-feedback hidden" role="status" aria-live="polite"></p>
+            <div class="task-center-columns">
+              <section class="automation-progress-panel task-records-column" aria-labelledby="taskRecordsTitle">
+                <h2 id="taskRecordsTitle">编辑保存记录</h2>
+                <p>按后台保存结果分类；“未成功”包含处理中、暂停及失败任务。</p>
+                <div class="task-save-filters" role="group" aria-label="保存状态筛选">
+                  <button type="button" class="task-save-filter" data-save-filter="saved" aria-pressed="false">成功保存 <span id="savedTaskCount">0</span></button>
+                  <button type="button" class="task-save-filter active" data-save-filter="unsaved" aria-pressed="true">未成功 <span id="unsavedTaskCount">0</span></button>
+                  <button type="button" class="button subtle" id="retryAutomationJobsBatch" disabled title="重试未成功的编辑保存任务；跳过运行中、待选择配置及重复商品记录">批量重试</button>
+                  <button type="button" class="button subtle" id="restoreDeletedAutomationJobsBatch" disabled title="恢复所有因妙手采集箱删除而暂停、且仍保有本地快照的商品">一键恢复到采集箱并重新保存</button>
+                </div>
+                <section class="batch-freight-template-panel hidden" id="batchFreightTemplatePanel" aria-label="批量修改运费模板">
+                  <label>批量运费模板<select id="batchFreightTemplate" disabled><option value="">请先勾选待处理商品</option></select></label>
+                  <button class="button primary" id="batchFreightTemplateSubmit" type="button" disabled>确认批量修改</button>
+                  <small id="batchFreightTemplateNote">仅处理“运费模板 · 待你选择”的商品，不会自动发布。</small>
+                </section>
+                <section class="batch-freight-template-panel hidden" id="batchWarehousePanel" aria-label="批量选择发货仓库">
+                  <label>批量发货仓库<select id="batchWarehouse" disabled><option value="">请先勾选待处理商品</option></select></label>
+                  <button class="button primary" id="batchWarehouseSubmit" type="button" disabled>确认批量选择</button>
+                  <small id="batchWarehouseNote">仅处理“发货仓库 · 待你选择”的商品，不会自动发布。</small>
+                </section>
+                <div id="automationJobList" aria-live="polite"></div>
+              </section>
+              <div id="taskColumnResizer" class="task-column-resizer" role="separator" tabindex="0" aria-label="调整任务记录与发布队列宽度" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" aria-valuenow="50" title="拖动调整两列宽度；双击恢复均分；方向键微调"></div>
+              <section class="automation-progress-panel task-publish-column" aria-labelledby="publishQueueTitle">
+                <div class="task-column-title"><h2 id="publishQueueTitle">发布队列</h2><b id="publishQueueBadge" class="status-pill neutral hidden" title="等待发布的商品数">0</b></div>
+                <p>保存后等待你统一发布；妙手接受发布任务不等于 TEMU 最终上架成功，请到发布记录核对。</p>
+                <div class="publish-queue-actions">
+                  <label class="publish-shop-select">发布店铺（多选）<select id="publishQueueShop" multiple size="5" aria-describedby="publishShopHint"><option value="" selected>全部店铺</option></select></label>
+                  <label>发布间隔（秒）<input id="publishQueuePublishInterval" type="number" min="1" max="600" step="1" value="1" inputmode="numeric" /></label>
+                  <label>合计发布（件）<input id="publishQueuePublishCount" type="number" min="1" step="1" inputmode="numeric" placeholder="留空全部" /></label>
+                  <button class="button primary" id="publishReadyAutomationJobs" type="button">发布队列商品</button><button class="button subtle" id="refreshPublishQueue" type="button">刷新队列</button>
+                </div>
+                <p class="live-hint" id="publishShopHint">按住 Ctrl 可多选店铺；数量按所选店铺合计，按队列顺序与设置间隔依次发布。“全部店铺”与指定店铺互斥。</p>
+                <div class="publish-queue-actions"><button class="button subtle" id="selectAllPublishQueue" type="button" disabled>全选队列</button><button class="button subtle" id="removePublishQueueBatch" type="button" disabled>批量删除（0）</button><small>仅移出队列，保留妙手商品和保存记录</small></div>
+                <section id="publishProgress" class="publish-progress" aria-label="本轮发布进度" aria-live="polite" hidden>
+                  <div class="publish-progress-head"><strong id="publishProgressTitle">发布进度</strong><span id="publishProgressCount"></span></div>
+                  <progress id="publishProgressBar" max="1" value="0" aria-label="本轮发布处理进度"></progress>
+                  <p id="publishProgressSummary"></p><small id="publishProgressCurrent"></small>
+                </section>
+                <div id="publishQueueList" class="publish-queue-list" aria-live="polite"></div>
+              </section>
+            </div>
+            <section id="demoTaskHistorySection" class="demo-task-history hidden"><h2>演示草稿记录</h2><div id="taskHistory" class="history-list"></div></section>
+          </div>
+        </section>
+        <section class="page" id="publishRecords">
+          <div class="publish-records-page">
+            <div class="publish-records-head"><div><p class="eyebrow">MIAOSHOU / PUBLISH HISTORY</p><h1>发布记录</h1><p>查看妙手提交到 TEMU 半托管的最近处理结果。</p></div><button class="button subtle" id="refreshPublishRecords">刷新记录</button></div>
+            <div id="publishRecordsList" class="publish-record-list"><p class="live-empty">正在读取发布记录…</p></div>
+          </div>
+        </section>
+        <section class="page" id="orders">
+          <div class="publish-records-page">
+            <div class="publish-records-head"><div><p class="eyebrow">MIAOSHOU / READ-ONLY ORDER SYNC</p><h1 id="orderCenterTitle">订单中心 / 妙手采集箱 1</h1><p id="orderAccountDescription">对应妙手采集箱 1；只读取并保存该账号的订单，不修改或回写妙手。</p></div><button class="button primary" id="syncOrders">同步订单记录</button></div>
+            <div class="order-sync-summary"><span id="orderSyncCount">本地订单 0 条</span><span id="orderLastSynced">尚未同步</span><span id="orderAutoSyncSchedule">自动同步：正在读取</span><span class="status-pill neutral" id="orderSyncStatus">正在检查接口</span><label class="order-shop-filter">店铺<select id="orderShopFilter"><option value="">全部店铺</option></select></label></div>
+            <div id="ordersList" class="order-record-list"><p class="live-empty">正在读取本地订单记录…</p></div>
+          </div>
+        </section>
+        <section class="page" id="products"><div class="simple-page"><p class="eyebrow">PRODUCT ASSETS</p><h1>商品资产</h1><p>已同步的商品会显示在这里。请先从工作台载入演示商品或接入妙手 API。</p></div></section>
+        <section class="page" id="templates"><div class="simple-page"><p class="eyebrow">RULES &amp; TEMPLATES</p><h1>规则与模板</h1><p>此原型已内置标题、售价、发货时效与必填字段校验规则。</p></div></section>
+        <section class="page" id="pricing" aria-label="自动核价">
+          <div class="pricing-page" id="pricingModule">
+            <section class="pricing-card">
+              <div class="pricing-embed" id="pricingWorkbenchEmbed">
+                <div class="pricing-fallback" id="pricingWorkbenchFallback">
+                  <strong>尚未连接核价扩展</strong>
+                  <p>请安装或重新加载 <b>Temu 半托管核价助手 v0.3.56.6</b>，然后刷新本页面或点击“重新连接工作台”。</p>
+                  <p>此模块不会读取妙手账号、采集箱商品或自动化队列。</p>
+                </div>
+                <iframe id="pricingWorkbenchFrame" title="Temu 自动核价工作台" hidden></iframe>
+              </div>
+            </section>
+          </div>
+        </section>
+        <section class="page" id="zhihou">
+          <div class="zhihou-page" id="zhihouModule">
+            <header class="zhihou-head">
+              <div><p class="eyebrow">ZHIHOU / ORDER DESK</p><h1>订单工作台</h1><p>查询、选择与处理智猴订单。登录密码与访问令牌只保存在当前后台内存，关闭或重启后台后自动清除。</p></div>
+              <span class="status-pill neutral" id="zhihouConnectionState">正在检查连接</span>
+            </header>
+            <section class="zhihou-card" aria-labelledby="zhihouLoginTitle">
+              <div class="zhihou-card-head"><div><h2 id="zhihouLoginTitle">连接智猴</h2><p>使用智猴第三方接口账户登录；不写入本机 <code>.env</code>、数据库或浏览器存储。</p></div><button type="button" class="button subtle" id="zhihouDisconnect" disabled>断开连接</button></div>
+              <form id="zhihouLoginForm" class="zhihou-login-form" autocomplete="off">
+                <label>智猴账号<input id="zhihouAccount" name="zhihou-account" maxlength="128" autocomplete="username" required /></label>
+                <label>智猴密码<input id="zhihouPassword" name="zhihou-password" type="password" maxlength="512" autocomplete="current-password" required /></label>
+                <label>登录有效期<select id="zhihouTokenLifetime"><option value="WEEKLY_EXPIRED">7 天</option><option value="MONTHLY_EXPIRED">30 天</option><option value="QUARTER_EXPIRED">90 天</option><option value="HALF_YEAR_EXPIRED">180 天</option></select></label>
+                <button type="submit" class="button primary" id="zhihouLoginSubmit">登录并连接</button>
+              </form>
+              <p id="zhihouLoginStatus" class="zhihou-status" role="status" aria-live="polite"></p>
+            </section>
+            <section class="zhihou-card" aria-labelledby="zhihouReadTitle">
+              <div class="zhihou-card-head"><div><h2 id="zhihouReadTitle">订单</h2><p>先筛选订单，再勾选一条进入申请单号和报关信息预览；查询不改变智猴数据。</p></div></div>
+              <details class="zhihou-data-tools"><summary>读取基础数据</summary><div class="zhihou-read-actions" role="group" aria-label="智猴基础数据查询">
+                <button type="button" class="button primary" id="zhihouSyncStoresAndOrders" disabled>同步店铺和订单</button>
+                <button type="button" class="button subtle" data-zhihou-read="stores" disabled>刷新店铺</button>
+                <button type="button" class="button subtle" data-zhihou-read="channels" disabled>刷新渠道</button>
+                <button type="button" class="button subtle" data-zhihou-read="warehouses" disabled>刷新仓库</button>
+              </div></details>
+              <form id="zhihouOrderForm" class="zhihou-order-form">
+                <label>店铺<select id="zhihouStoreId"><option value="">全部店铺</option></select></label>
+                <label class="zhihou-query-order">订单号／转单号<input id="zhihouOrderNos" maxlength="3000" placeholder="多个订单号可用逗号或换行分隔" /></label>
+                <label>每页数量<select id="zhihouPageSize"><option value="30">30</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+                <button type="submit" class="button primary" id="zhihouOrderSearch" disabled>查询订单</button>
+                <details class="zhihou-advanced-filters"><summary>更多筛选</summary><div>
+                  <label>开始创建时间<input id="zhihouBeginTime" maxlength="19" placeholder="YYYY-MM-DD HH:MM:SS" /></label>
+                  <label>结束创建时间<input id="zhihouEndTime" maxlength="19" placeholder="YYYY-MM-DD HH:MM:SS" /></label>
+                  <label>转单号<input id="zhihouTransferOrderNos" maxlength="3000" placeholder="例如 ZH9Y121234" /></label>
+                </div></details>
+              </form>
+              <p id="zhihouReadStatus" class="zhihou-status" role="status" aria-live="polite">请先登录智猴。</p>
+              <div class="zhihou-selection-bar" id="zhihouSelectionBar" hidden><span id="zhihouSelectedCount">已选 0 条</span><button type="button" class="button primary" id="zhihouUseSelected" disabled>申请单号／添加报关信息</button><button type="button" class="button subtle" id="zhihouClearSelection" disabled>清空选择</button></div>
+              <div class="zhihou-result" id="zhihouResult" aria-live="polite"><p class="live-empty">查询结果会显示在这里。</p></div>
+            </section>
+            <section class="zhihou-card zhihou-write-card" aria-labelledby="zhihouWriteTitle">
+              <div class="zhihou-card-head"><div><h2 id="zhihouWriteTitle">订单写入</h2><p>先在本机校验并生成预览；点击最终确认后才会调用智猴一次。超时、断网或结果不明时不会自动重试，请先查询订单状态。</p></div><span class="zhihou-write-badge">预览 + 二次确认</span></div>
+              <div class="zhihou-write-warning"><strong>注意</strong><span>预览保存在当前后台内存 10 分钟，确认一次即失效。创建、同步和取消均不会在生成预览时写入智猴。</span></div>
+              <div class="zhihou-write-forms">
+                <details class="zhihou-write-section">
+                  <summary>创建订单</summary>
+                  <form class="zhihou-write-form" data-zhihou-write="create">
+                    <div class="zhihou-form-grid three">
+                      <label>店铺 ID<input name="storeId" inputmode="numeric" maxlength="30" required /></label>
+                      <label>订单号<input name="orderNo" maxlength="100" required /></label>
+                      <label>渠道 ID<input name="channelId" maxlength="100" required /></label>
+                      <label>国家<input name="country" value="美国" maxlength="80" required /></label>
+                      <label>国家简码<input name="countryCode" value="US" maxlength="8" required /></label>
+                      <label>分仓标识<select name="virPartTag"><option value="D">D（美东）</option><option value="X">X（美西）</option></select></label>
+                      <label>邮编<input name="zipcode" maxlength="30" required /></label>
+                      <label>仓库集群 ID（可选）<input name="warehouseClusterId" inputmode="numeric" maxlength="30" /></label>
+                      <label>平台店铺 ID（可选）<input name="platformShopId" maxlength="100" /></label>
+                    </div>
+                    <h3>收件信息（按智猴订单要求填写）</h3>
+                    <div class="zhihou-form-grid three">
+                      <label>收件人<input name="fullName" maxlength="200" /></label>
+                      <label>州/省<input name="province" maxlength="100" /></label>
+                      <label>州/省代码<input name="provinceCode" maxlength="30" /></label>
+                      <label>城市<input name="city" maxlength="100" /></label>
+                      <label>手机号<input name="phone" maxlength="100" /></label>
+                      <label>邮箱<input name="email" type="email" maxlength="254" /></label>
+                      <label>街道<input name="street" maxlength="300" /></label>
+                      <label class="span-two">详细地址<input name="address" maxlength="500" /></label>
+                    </div>
+                    <h3>商品（单件；海关编码为必填）</h3>
+                    <div class="zhihou-form-grid three">
+                      <label>海关编码<input name="itemHsCode" maxlength="40" required /></label>
+                      <label>商品名称<input name="itemName" maxlength="300" /></label>
+                      <label>数量<input name="itemQuantity" inputmode="numeric" maxlength="12" /></label>
+                      <label>重量（克）<input name="itemWeight" inputmode="numeric" maxlength="12" /></label>
+                      <label>SKU<input name="itemSku" maxlength="200" /></label>
+                      <label>中文名<input name="itemChineseName" maxlength="300" /></label>
+                      <label>英文名<input name="itemEnglishName" maxlength="300" /></label>
+                      <label>金额（分）<input name="itemAmount" inputmode="numeric" maxlength="12" /></label>
+                      <label>最早打印面单时间<input name="labelPrintableTime" maxlength="19" placeholder="YYYY-MM-DD HH:MM:SS" /></label>
+                      <label>长（毫米）<input name="itemLength" inputmode="numeric" maxlength="12" /></label>
+                      <label>宽（毫米）<input name="itemWidth" inputmode="numeric" maxlength="12" /></label>
+                      <label>高（毫米）<input name="itemHeight" inputmode="numeric" maxlength="12" /></label>
+                      <label class="span-two">商品缩略图地址<input name="thumbnailUri" type="url" maxlength="2000" placeholder="https://…" /></label>
+                    </div>
+                    <button type="submit" class="button primary" data-zhihou-preview disabled>生成创建订单预览</button>
+                  </form>
+                </details>
+                <details class="zhihou-write-section">
+                  <summary>同步单号／面单</summary>
+                  <form class="zhihou-write-form" data-zhihou-write="sync">
+                    <div class="zhihou-form-grid three">
+                      <label>店铺 ID<input name="storeId" inputmode="numeric" maxlength="30" required /></label>
+                      <label>订单号<input name="orderNo" maxlength="100" required /></label>
+                      <label>运单号<input name="waybillNo" maxlength="100" required /></label>
+                      <label class="span-two">面单地址<input name="labelUrl" type="url" maxlength="2000" placeholder="https://…" required /></label>
+                      <label>外部承运商 ID<input name="externalCarrierId" maxlength="200" required /></label>
+                      <label>外部承运商<input name="externalCarrier" maxlength="200" placeholder="例如 USPS" required /></label>
+                      <label>外部物流渠道 ID<input name="externalLogisticsChannelId" maxlength="200" required /></label>
+                      <label>外部物流渠道<input name="externalLogisticsChannel" maxlength="200" required /></label>
+                    </div>
+                    <button type="submit" class="button primary" data-zhihou-preview disabled>生成同步预览</button>
+                  </form>
+                </details>
+                <details class="zhihou-write-section danger">
+                  <summary>取消订单</summary>
+                  <form class="zhihou-write-form" data-zhihou-write="cancel">
+                    <div class="zhihou-form-grid two">
+                      <label>店铺 ID（可选）<input name="storeId" inputmode="numeric" maxlength="30" /></label>
+                      <label>订单号<input name="orderNo" maxlength="100" required /></label>
+                    </div>
+                    <button type="submit" class="button danger" data-zhihou-preview disabled>生成取消订单预览</button>
+                  </form>
+                </details>
+              </div>
+              <div class="zhihou-write-preview" id="zhihouWritePreview" aria-live="polite"><p class="live-empty">填写一种写入操作后先生成预览；尚未向智猴提交。</p></div>
+              <div class="zhihou-write-confirm">
+                <button type="button" class="button danger" id="zhihouWriteSubmit" disabled>确认并仅提交一次</button>
+                <p id="zhihouWriteStatus" class="zhihou-status" role="status" aria-live="polite">请先登录智猴并生成写入预览。</p>
+              </div>
+            </section>
+          </div>
+        </section>
+        <section class="page" id="settings">
+          <div class="simple-page settings-page"><p class="eyebrow">INTEGRATIONS</p><h1>接口设置</h1><p>发布模式：TEMU 半托管。API 保存在本机 .env，可在这里管理采集箱入口。</p>
+            <section class="collection-account-manager" aria-labelledby="localDisplayCacheTitle">
+              <div class="collection-manager-heading"><h2 id="localDisplayCacheTitle">客户端与本地显示缓存</h2><button type="button" class="button subtle" id="clearLocalDisplayCache">清理显示缓存</button></div>
+              <p class="collection-manager-help">运行 start-workbench.cmd 可选择客户端或网页端，共用同一个后台和商品数据库。列表缓存只用于只读预览，最多 20 页、约 8 MB，保留 24 小时；操作始终核对后台最新记录。</p>
+              <p id="localDisplayCacheStatus" role="status">正在读取本机显示缓存…</p>
+            </section>
+            <section class="collection-account-manager" aria-labelledby="collectionAccountManagerTitle">
+              <div class="collection-manager-heading"><h2 id="collectionAccountManagerTitle">采集箱管理</h2><button type="button" class="button subtle" id="refreshCollectionAccountManager">刷新列表</button></div>
+              <p class="collection-manager-help">可为现有采集箱重命名，仅更新本机显示名称，不改变账号编号、API、商品或任务。删除前自动备份，再清除该箱的本机 API、入口、本地订单、自动化池和全部任务（含待发布）。不删除妙手商品、店铺或其他采集箱的订单任务。已删除编号不复用；默认采集箱 1 仅可重命名。</p>
+              <div id="collectionAccountManager">正在读取采集箱…</div>
+              <p id="collectionAccountManagerStatus" role="status" aria-live="polite"></p>
+              <details id="removedCollectionAccounts" hidden><summary>查看已删除采集箱</summary><div id="removedCollectionAccountList"></div></details>
+            </section>
+            <section class="collection-account-manager" aria-labelledby="deepSeekSettingsTitle">
+              <div class="collection-manager-heading"><h2 id="deepSeekSettingsTitle">DeepSeek API</h2><span id="deepSeekConfigured" class="status-pill neutral">正在检查</span></div>
+              <p class="collection-manager-help">用于标题润色及商品属性识别，所有采集箱共用。保存到本机 .env 后立即生效，不会自动调用 AI 或发布商品。</p>
+              <form id="deepSeekSettingsForm" autocomplete="off">
+                <label for="deepSeekApiKey">API Key<input id="deepSeekApiKey" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写 DeepSeek API Key；已保存的密钥不会回显" /></label>
+                <p id="deepSeekModel" class="collection-manager-help"></p>
+                <div class="deepseek-settings-actions"><button type="submit" class="button primary" id="saveDeepSeekSettings">保存 API 配置</button><button type="button" class="button subtle collection-manager-delete" id="removeDeepSeekSettings" disabled>删除 DeepSeek 配置</button><button type="button" class="button subtle" id="refreshDeepSeekSettings">刷新状态</button></div>
+              </form>
+              <p id="deepSeekSettingsStatus" role="status" aria-live="polite"></p>
+            </section>
+            <section class="collection-account-manager" aria-labelledby="deepSeekProfileManagerTitle">
+              <div class="collection-manager-heading"><h2 id="deepSeekProfileManagerTitle">DeepSeek API 管理与妙手分配</h2><button type="button" class="button subtle" id="refreshDeepSeekProfiles">刷新列表</button></div>
+              <p class="collection-manager-help">可保存多个命名 API Key，并为每个妙手采集箱指定使用的 API。未指定时继续使用上方的默认 API。密钥只保存在本机，列表不会回显；保存或分配不会自动调用 AI、编辑商品或发布。</p>
+              <form id="deepSeekProfileForm" class="deepseek-profile-form" autocomplete="off">
+                <label for="deepSeekProfileName">API 名称<input id="deepSeekProfileName" maxlength="40" required placeholder="例如：NL 专用 API" /></label>
+                <label for="deepSeekProfileKey">API Key<input id="deepSeekProfileKey" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写新的 DeepSeek API Key" /></label>
+                <button type="submit" class="button primary" id="saveDeepSeekProfile">新增 API 配置</button>
+              </form>
+              <div id="deepSeekProfileList" class="deepseek-profile-list" aria-live="polite">正在读取 API 配置…</div>
+              <div id="deepSeekAccountAssignments" class="deepseek-account-assignments" aria-live="polite"></div>
+              <p id="deepSeekProfileStatus" role="status" aria-live="polite"></p>
+            </section>
+            <section class="collection-account-manager" aria-labelledby="pricingConfigTitle">
+              <div class="collection-manager-heading"><h2 id="pricingConfigTitle">核价工作台配置</h2><span id="pricingWorkbenchState" class="status-pill neutral" role="status" aria-live="polite">正在等待核价扩展</span></div>
+              <p class="collection-manager-help">用于设置利润公式、成本和重量规则。配置只保存到浏览器核价扩展本地存储，不会发送到妙手、DeepSeek 或自动化队列。</p>
+              <form id="pricingConfigForm" class="pricing-config-form" autocomplete="off">
+                <label class="pricing-config-formula">单件利润公式<textarea id="pricingConfigFormula" spellcheck="false" maxlength="500"></textarea><small>可使用 price、cost、weight、rate、fixed，以及 + - * / 和括号。</small></label>
+                <label>每公斤运费（元）<input id="pricingConfigRate" type="number" min="0" step="0.01" /></label>
+                <label>每件处理费（元）<input id="pricingConfigFixed" type="number" min="0" step="0.01" /></label>
+                <label>最低单件利润（元）<input id="pricingConfigMinProfit" type="number" min="0" step="0.01" /></label>
+                <label>最低利润率（%）<input id="pricingConfigMinMargin" type="number" min="0" max="100" step="0.1" /></label>
+                <label>最低核价（元）<input id="pricingConfigMinQuote" inputmode="decimal" /></label>
+                <div class="pricing-config-strategies">
+                  <label>全部达标时<select id="pricingConfigPassAction"><option value="">人工决定</option><option>申请调整更新申报价格</option><option>重新调整报价</option><option>放弃调整报价</option></select></label>
+                  <label>全部不达标时<input id="pricingConfigFailAction" value="放弃调整报价" readonly aria-describedby="pricingConfigFailHint" /><small id="pricingConfigFailHint">固定规则，与核价工作台一致。</small></label>
+                  <label>部分达标时<select id="pricingConfigMixedAction"><option value="">人工决定</option><option>放弃调整报价</option><option>重新调整报价</option><option>申请调整更新申报价格</option></select></label>
+                </div>
+                <div class="pricing-config-actions"><button type="button" class="button subtle" id="pricingConfigSuggested">恢复推荐值</button><button type="submit" class="button primary" id="pricingConfigSave">保存核价配置</button><button type="button" class="button subtle" id="pricingWorkbenchOpen">重新连接工作台</button></div>
+              </form>
+              <p id="pricingConfigStatus" role="status" aria-live="polite"></p>
+            </section>
+            <div class="integration-card"><div class="integration-logo">MS</div><div><h3>妙手 ERP / API</h3><p id="miaoShouSettingsDescription">用于读取商品、SKU、图片、成本和货源信息。</p><div class="integration-actions"><button type="button" class="button subtle" id="refreshMiaoshouShops">重新拉取妙手店铺</button><span id="miaoshouShopRefreshStatus" role="status" aria-live="polite">不会同步商品或改动任务</span></div></div><span class="status-pill neutral" id="miaoShouSettingsStatus">待配置</span></div>
+            <div class="integration-card"><div class="integration-logo temu-logo">T</div><div><h3>妙手 TEMU 半托管上架</h3><p id="temuSettingsDescription">从妙手半托管采集箱读取商品，并通过妙手提交发布。</p></div><span class="status-pill neutral" id="temuSettingsStatus">正在检查</span></div>
+            <div class="code-note">工作台后端只调用妙手，可读取、新建、编辑半托管采集箱商品；发布仍需单独确认。</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal hidden" id="personnelBindingModal" role="dialog" aria-modal="true" aria-labelledby="personnelBindingTitle" aria-describedby="personnelBindingHelp">
+      <div class="modal-card personnel-binding-card">
+        <button class="close-modal" type="button" data-close="personnelBindingModal" aria-label="关闭人员店铺绑定">×</button>
+        <h2 id="personnelBindingTitle">人员店铺绑定 · 采集箱 1</h2>
+        <p id="personnelBindingHelp">选择人员，再勾选其目标店铺，可一人绑定多家。仅修改本地规则，不修改妙手人员信息，也不会立即保存或发布商品。清空店铺后保存可解除绑定。</p>
+        <label class="personnel-binding-person">所属人员<select id="personnelBindingPerson"></select></label>
+        <div id="personnelBindingShops" class="personnel-binding-shops" role="group" aria-label="该人员的目标店铺"></div>
+        <p id="personnelBindingStatus" role="status" aria-live="polite"></p>
+        <div class="personnel-alias-actions"><button class="button subtle" type="button" data-close="personnelBindingModal">取消</button><button class="button primary" id="personnelBindingSave" type="button">保存绑定</button></div>
+        <details class="personnel-binding-summary"><summary>查看已保存的绑定</summary><ul id="personnelBindingSummary"></ul></details>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="personnelAliasModal" role="dialog" aria-modal="true" aria-labelledby="personnelAliasTitle" aria-describedby="personnelAliasHelp">
+      <div class="modal-card personnel-alias-card">
+        <button class="close-modal" id="personnelAliasClose" type="button" data-close="personnelAliasModal" aria-label="关闭人员备注">×</button>
+        <h2 id="personnelAliasTitle">人员备注</h2>
+        <p id="personnelAliasHelp">备注仅保存在本机，优先显示在筛选框和商品行，不修改妙手。请核实账号 ID 后填写；清空备注可恢复妙手名称或“未匹配人员”。每条最多 80 个字符。</p>
+        <div class="personnel-alias-table"><table><thead><tr><th scope="col">账号 ID</th><th scope="col">妙手名称／账号</th><th scope="col">本地备注</th></tr></thead><tbody id="personnelAliasRows"></tbody></table></div>
+        <p id="personnelAliasStatus" role="status" aria-live="polite"></p>
+        <div class="personnel-alias-actions"><button class="button subtle" id="personnelAliasCancel" type="button" data-close="personnelAliasModal">取消</button><button class="button primary" id="personnelAliasSave" type="button">保存备注</button></div>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="productModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-card">
+        <button class="close-modal" data-close="productModal">×</button>
+        <p class="eyebrow">妙手商品选择器（演示数据）</p><h2 id="modalTitle">选择待上架的商品</h2>
+        <label class="search"><span>⌕</span><input id="productSearch" placeholder="搜索商品标题、SKU 或货源 ID" /></label>
+        <div class="product-options" id="productOptions"></div>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+      <div class="modal-card result-card"><button class="close-modal" data-close="resultModal">×</button><div class="result-icon">✓</div><p class="eyebrow">DRAFT CREATED</p><h2 id="resultTitle">TEMU 草稿已创建</h2><p id="resultBody">已生成草稿编号。</p><button class="button primary" data-close="resultModal">完成</button></div>
+    </div>
+
+    <div class="modal hidden" id="imagePreviewModal" role="dialog" aria-modal="true" aria-labelledby="imagePreviewCaption">
+      <div class="modal-card image-preview-modal-card"><button class="close-modal" data-close="imagePreviewModal" aria-label="关闭图片预览">×</button><img id="imagePreviewLarge" alt="图片预览" /><p id="imagePreviewCaption"></p></div>
+    </div>
+
+    <div class="modal hidden" id="imageAiEditModal" role="dialog" aria-modal="true" aria-labelledby="imageAiEditTitle">
+      <div class="modal-card image-ai-edit-modal-card"><button class="close-modal" data-close="imageAiEditModal" aria-label="关闭 AI 修改图片">×</button><p class="eyebrow">AI IMAGE EDIT</p><h2 id="imageAiEditTitle">AI 修改图片</h2><p class="image-ai-edit-note">本机 Qwen 会先固定 <code>&lt;image1&gt;</code> 为唯一商品主体，再原样附上中文文本框内容作为正向提示词，避免生成其他商品。可选择云端 API 或本机 ComfyUI；本地生成不会把原图发送到云端。生成后请先确认商品一致，再下载上传至妙手图片空间。</p><div class="image-ai-edit-grid"><img id="imageAiEditSource" alt="待修改的商品图片" /><label>中文正向提示词<textarea id="imageAiEditInstruction" rows="6" maxlength="800" placeholder="仅替换背景，保持与原图完全相同的商品不变。"></textarea></label></div><p class="image-ai-edit-status" id="imageAiEditStatus"></p><ol class="image-ai-edit-progress hidden" id="imageAiEditProgress" aria-live="polite"></ol><div class="image-ai-edit-actions"><button class="button subtle" type="button" id="imageAiEditWhiteBg">纯白背景</button><button class="button subtle" type="button" id="imageAiEditLifestyle">生活场景</button><button class="button subtle" type="button" id="imageAiEditLocalSubmit">▣ 本地生成（ComfyUI）</button><button class="button primary" type="button" id="imageAiEditSubmit">☁ API 生成</button></div><section class="image-ai-edit-result hidden" id="imageAiEditResult"><strong>修改稿</strong><img id="imageAiEditOutput" alt="AI 修改后的商品图片" /><div><button class="button primary" type="button" id="imageAiEditDownload">下载修改稿</button></div></section></div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+    <script src="./account-context.js?v=1.2.190"></script>
+  <script src="./local-view-cache.js?v=1.2.190"></script>
+  <script src="./live-status.js?v=1.2.190"></script>
+  <script src="./virtual-list.js?v=1.2.173"></script>
+  <script src="./diagnostics-panel.js?v=1.2.190"></script>
+  <script src="./shared-automation.js?v=1.2.190"></script>
+  <script src="./pricing-workbench.js?v=1.2.190"></script>
+  <script src="./app.js?v=1.2.190"></script>
+    <script src="./collection-sync.js?v=1.2.173"></script>
+    <script src="./automatic-tasks.js?v=1.2.173"></script>
+    <script src="./desktop-ui.js?v=1.2.190"></script>
+    <script src="./live-editor.js?v=1.2.190"></script>
+    <script src="./zhihou.js?v=1.2.173"></script>
+  </body>
+</html>

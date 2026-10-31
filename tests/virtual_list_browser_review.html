@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Isolated virtual list review</title>
+<link rel="stylesheet" href="../styles.css">
+<style>body{padding:12px}#sharedJobsList{width:700px;height:400px;max-height:400px}#report{white-space:pre-wrap}article button{height:24px}.test-row{padding:0;box-sizing:border-box}button{padding:0}</style>
+<h1>Isolated virtual list review</h1><p>Synthetic rows only. No workbench API calls.</p>
+<pre id="report">Running…</pre><div id="sharedJobsList" class="shared-list"></div>
+<script src="../virtual-list.js"></script>
+<script>
+(async()=>{
+  const report=document.getElementById('report'),list=document.getElementById('sharedJobsList');
+  const checks=[];const log=(title,data)=>{checks.push(title+' '+JSON.stringify(data));report.textContent=checks.join('\n');};
+  const tick=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const rows=Array.from({length:500},(_,i)=>({key:'row-'+i,height:i%7===0?215:120,status:'failed'}));
+  const virtual=new SharedVirtualList(list,{estimateHeight:()=>300,onViews(){},createView:()=>{
+    const line=document.createElement('article');line.className='test-row';let current;
+    return {line,update(row){line.style.height=row.height+'px';if(current!==row.status){line.replaceChildren();const button=document.createElement('button');button.textContent=row.key+' '+row.status;line.append(button);current=row.status;}}};
+  }});
+  virtual.setRows(rows);await tick();await tick();
+  log('initial',{mounted:virtual.views.size,height:list.scrollHeight,total:virtual.offsets.at(-1)});
+  list.scrollTop=list.scrollHeight;list.dispatchEvent(new Event('scroll'));await tick();await tick();
+  log('bottom',{mounted:virtual.views.size,last:virtual.views.has('row-499'),scroll:list.scrollTop,height:list.scrollHeight,total:virtual.offsets.at(-1)});
+  list.scrollTop=0;list.dispatchEvent(new Event('scroll'));await tick();await tick();
+  const target=virtual.views.get('row-0').line.querySelector('button');target.focus();await tick();
+  virtual.setRows(rows.map(row=>row.key==='row-0'?{...row,status:'ready_publish'}:row));await tick();
+  log('status update focused row',{focusedTag:document.activeElement.tagName,focusedInList:list.contains(document.activeElement),row0StillMounted:virtual.views.has('row-0')});
+  list.scrollTop=15000;list.dispatchEvent(new Event('scroll'));await tick();await tick();
+  const anchor=virtual.anchor(),at=virtual.index.get(anchor.key),focus=virtual.views.get(anchor.key).line.querySelector('button');focus.focus();await tick();
+  list.scrollTop=list.scrollHeight;list.dispatchEvent(new Event('scroll'));await tick();await tick();
+  log('pinned far focus',{focused:document.activeElement===focus,mounted:virtual.views.size,last:virtual.views.has('row-499'),previous:virtual.views.has(rows[at-1].key),next:virtual.views.has(rows[at+1].key)});
+  virtual.setRows(rows.slice(0,50),{reset:true});await tick();await tick();
+  log('threshold shrink',{mounted:virtual.views.size,children:list.children.length,focusedTag:document.activeElement.tagName,scroll:list.scrollTop,windowed:list.classList.contains('shared-windowed')});
+  virtual.destroy();
+  const source=await (await fetch('../shared-automation.js')).text();
+  const code=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
+  const pagerNode=document.createElement('div');pagerNode.id='sharedJobsPager';document.body.append(pagerNode);
+  const state={jobs:{page:1,pageSize:50,selected:new Map()}};let controls;
+  const refresh=async()=>controls.pager('jobs',{page:state.jobs.page,pages:2,total:100});
+  controls=Function('state','$','refresh','updateTaskControls','notice',
+    code('  function element(', '  async function api(')+code('  function pager(', '  function selection(')+'return {pager};')
+    (state,id=>document.getElementById(id),refresh,()=>{},()=>{});
+  controls.pager('jobs',{page:1,pages:2,total:100});
+  state.jobs.pagerView.next.click();await tick();
+  log('real pager last-page button',{page:state.jobs.page,nextDisabled:state.jobs.pagerView.next.disabled,expectedDisabled:true});
+  log('finished',{ok:true});
+})().catch(error=>document.getElementById('report').textContent+='\nERROR '+error.stack);
+</script></html>
