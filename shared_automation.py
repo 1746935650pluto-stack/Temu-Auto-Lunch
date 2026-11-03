@@ -988,13 +988,12 @@ class SharedAutomation:
             shop_id = row['shopId']
             def read(path, payload):
                 return self.b.miao_request(lambda: worker._vendor(path, payload), transfer['targetAccountId'])
-            freight_rows = [r for r in self.b.automation_logistic_rows(read, 'freight', shop_id, site)
-                            if str(r.get('templateName', '')).strip() == '通用']
-            warehouse_rows = [r for r in self.b.automation_logistic_rows(read, 'warehouse', shop_id, site)
-                              if str(r.get('warehouseName', '')).strip() == '发货']
-            if len(freight_rows) != 1 or len(warehouse_rows) != 1:
-                raise ValueError(f'目标店铺 {shop_id} 的 {site} 站缺少唯一的“通用”运费模板或“发货”仓库，未创建副本')
-            freight_id, warehouse_id = str(freight_rows[0]['templateId']), str(warehouse_rows[0]['warehouseId'])
+            freight_id = self.b.automation_default_logistic_id(
+                self.b.automation_logistic_rows(read, 'freight', shop_id, site), 'freight')
+            warehouse_id = self.b.automation_default_logistic_id(
+                self.b.automation_logistic_rows(read, 'warehouse', shop_id, site), 'warehouse')
+            if not freight_id or not warehouse_id:
+                raise ValueError(f'目标店铺 {shop_id} 的 {site} 站缺少唯一的“通用”运费模板或默认仓库（“发货”优先、其次“通用”），未创建副本')
             row['siteFreightTemplateList'] = [{'site': site, 'shopId': str(shop_id), 'freightTemplateId': freight_id}]
             row['siteWarehouseList'] = [{'site': site, 'shopId': shop_id, 'warehouseId': warehouse_id}]
             for sku in item['skuMap'].values():
@@ -2177,10 +2176,10 @@ class SharedAutomation:
             options = [{'id': str(row[id_key]), 'name': str(row.get(name_key) or row[id_key])}
                        for row in rows if isinstance(row, dict) and row.get('site') == job['site']
                        and row.get(id_key)]
-            defaults = [option for option in options if option['name'].strip() == ('通用' if kind == 'freight' else '发货')]
+            default_option = self.b.select_logistics_default(options, kind)
             pool = self.b.automation_pool(account)
             updated = pool.refresh_choices_for_shop(job['shopId'], job['site'], kind, options,
-                                                     queue_unique_default=len(defaults) == 1)
+                                                     queue_unique_default=default_option is not None)
             current = pool.get_job(job_id)
             if current is None or current['status'] not in {'needs_input', 'queued'}:
                 raise ValueError('任务状态已变化，请重新打开任务详情')

@@ -38,7 +38,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
-from automation_pool import AutomationPool, normalize_edit_concurrency
+from automation_pool import AutomationPool, normalize_edit_concurrency, select_logistics_default
 from partitioned_pool import PartitionedPool
 from account_runtime import RUNTIME, failure_flags, has_unknown_write_outcome
 from automation_watchdog import AutomationWatchdog
@@ -71,7 +71,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.190'
+APP_VERSION = '1.2.191'
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
 ACCOUNT_VENDOR_ACTIVE = {}
@@ -784,12 +784,20 @@ class AutomationBatchConfigCache:
             return result
 
 
+def automation_default_logistic_id(rows, kind):
+    id_key, name_key = ('templateId', 'templateName') if kind == 'freight' else ('warehouseId', 'warehouseName')
+    option = select_logistics_default([
+        {'id': str(row[id_key]), 'name': str(row.get(name_key) or '')}
+        for row in rows if isinstance(row, dict) and row.get(id_key)], kind)
+    return str(option['id']) if option else ''
+
+
 def automation_logistic_rows(vendor, kind, shop_id, site, selected_id=''):
     """Ask MiaoShou to resync a missing default/choice once before pausing."""
-    path, field, id_key, name_key, default = (
-        (HALF_FREIGHT, 'shopIdAndFreightTemplateListMap', 'templateId', 'templateName', '通用')
+    path, field, id_key = (
+        (HALF_FREIGHT, 'shopIdAndFreightTemplateListMap', 'templateId')
         if kind == 'freight' else
-        (HALF_WAREHOUSE, 'shopIdAndWarehouseListMap', 'warehouseId', 'warehouseName', '发货'))
+        (HALF_WAREHOUSE, 'shopIdAndWarehouseListMap', 'warehouseId'))
     rows = []
     for sync in (0, 1):
         data = vendor(path, {'shopId': shop_id, 'isRsync': sync}).get('data') or {}
@@ -798,7 +806,7 @@ def automation_logistic_rows(vendor, kind, shop_id, site, selected_id=''):
         if selected_id:
             if any(str(row[id_key]) == selected_id for row in rows):
                 break
-        elif sum(str(row.get(name_key, '')).strip() == default for row in rows) == 1:
+        elif automation_default_logistic_id(rows, kind):
             break
     return rows
 
@@ -1323,19 +1331,18 @@ def run_automation_job(pool: AutomationPool, job_id: str, vendor: Any, get_item:
                 return
             warehouse_id = selected_warehouse
         else:
-            defaults = [row for row in warehouse_rows if str(row.get('warehouseName', '')).strip() == '发货']
-            if len(defaults) != 1:
+            warehouse_id = automation_default_logistic_id(warehouse_rows, 'warehouse')
+            if not warehouse_id:
                 pool.pause_for_choice(job_id, 'warehouse', [
                     {'id': str(row['warehouseId']), 'name': str(row.get('warehouseName') or row['warehouseId'])}
                     for row in warehouse_rows
                 ])
                 return
-            warehouse_id = str(defaults[0]['warehouseId'])
         if not ai_client.configured:
             raise ValueError('DeepSeek 未配置，无法润色中英文标题')
         if not fresh.get('title') or not fresh.get('skuMap') or not fresh.get('imgUrls'):
             raise ValueError('商品缺少标题、SKU 或图片')
-        preflight_message = '店铺、站点和「通用／发货」配置已核对；不比较商品资料版本，按本次任务直接编辑并覆盖保存'
+        preflight_message = '店铺、站点和「通用」运费及默认仓库配置已核对；不比较商品资料版本，按本次任务直接编辑并覆盖保存'
         pool.update_job(job_id, step, 'done', preflight_message)
 
         step = 'prepare'

@@ -450,6 +450,47 @@ class AutomationWorkflowTests(unittest.TestCase):
         self.assertEqual(self.pool.get_job(job_id)['status'], 'done')
         self.assertIn(server.HALF_PUBLISH, state['writes'])
 
+    def test_general_warehouse_passes_preflight_saves_and_waits_for_publication(self):
+        state = {'saved': None, 'writes': []}
+
+        def vendor(path, payload):
+            if path == server.SHOP_LIST:
+                return {'data': {'shopList': [{'shopId': 1234}]}}
+            if path == server.HALF_SITES:
+                return {'data': {'publishSiteOptions': [{'key': 'US'}]}}
+            if path == server.HALF_FREIGHT:
+                return {'data': {'shopIdAndFreightTemplateListMap': {'1234': [
+                    {'site': 'US', 'templateName': '通用', 'templateId': 11}]}}}
+            if path == server.HALF_WAREHOUSE:
+                return {'data': {'shopIdAndWarehouseListMap': {'1234': [
+                    {'site': 'US', 'warehouseName': '通用', 'warehouseId': 22}]}}}
+            state['writes'].append(path)
+            if path == server.HALF_SHOP_SAVE:
+                state['saved'] = copy.deepcopy(payload['shopCollectItemInfo'])
+            return {'data': {}}
+
+        def get_item(_detail_id, mode, _shop_id=0):
+            item = copy.deepcopy(state['saved'] or self.source)
+            if mode == 'site':
+                item['collectBoxDetailShopList'] = [{'shopId': 1234}]
+            if mode == 'shop':
+                item['imgUrls'] = []
+            return item
+
+        job_id = 'i' * 32
+        self.pool.start_job(job_id, 777, 1234, 'US', publish_after_save=False, interval_seconds=15)
+        server.run_automation_job(self.pool, job_id, vendor, get_item,
+                                  lambda *_: {'ready': True}, FakeAI(), defer_publish=True)
+        saved = self.pool.get_job(job_id)
+        self.assertEqual(saved['status'], 'ready_publish')
+        self.assertEqual(saved['intervalSeconds'], 15)
+        self.assertIn(server.HALF_SHOP_SAVE, state['writes'])
+        self.assertNotIn(server.HALF_PUBLISH, state['writes'])
+        self.assertEqual(state['saved']['imgUrls'][0], self.source['imgUrls'][0])
+        self.assertIn('自动化池快照图片', next(event['message'] for event in saved['events']
+                                            if event['step'] == 'prepare' and event['status'] == 'done'))
+        self.assertEqual(state['saved']['siteWarehouseList'][0]['warehouseId'],'22')
+
     def test_missing_sku_packaging_is_defaulted_and_saved_before_manual_publication(self):
         self.source['skuMap'][';sample;'].update(length=None, width='', height=None, weight=None)
         state = {'saved': None, 'writes': []}

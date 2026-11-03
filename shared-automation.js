@@ -998,6 +998,14 @@
     const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));
     return `${fields.year}-${fields.month}-${fields.day} ${fields.hour}:${fields.minute}:${fields.second}`;
   }
+  function defaultLogisticsChoiceId(options, kind) {
+    const names = kind === 'freight' ? ['通用'] : ['发货', '通用'];
+    for (const name of names) {
+      const matches = options.filter(o => o.id && String(o.name || '').trim() === name);
+      if (matches.length) return new Set(matches.map(o => String(o.id))).size === 1 ? matches[0].id : '';
+    }
+    return '';
+  }
   async function jobLogistics(dialog, row, job, message) {
     const choices = select('', [['', '请选择店铺配置']]);
     const status = element('p', '正在同步店铺最新配置…');
@@ -1010,9 +1018,9 @@
       choices.replaceChildren(); option(choices, '', '请选择店铺配置');
       const choice = current.choices?.[current.step] || {}, options = choice.options || [];
       options.forEach(o => option(choices,o.id,o.name));
-      const defaults = options.filter(o => o.name.trim() === (current.step === 'freight' ? '通用' : '发货'));
+      const defaultId = defaultLogisticsChoiceId(options, current.step);
       choices.value = options.some(o=>o.id === choice.selectedId) ? choice.selectedId :
-        (defaults.length === 1 ? defaults[0].id : '');
+        defaultId;
       choices.disabled = syncing || !options.length;
       resume.disabled = !canResume();
     }

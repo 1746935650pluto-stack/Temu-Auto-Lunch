@@ -58,3 +58,28 @@ test('an empty refreshed list cannot submit an obsolete template', async()=>{
   assert.equal(select.disabled,true);assert.equal(resume.disabled,true);
   await resume.action();assert.equal(s.actions.length,0);
 });
+
+
+test('warehouse fallback, priority and ambiguity match backend defaults',async()=>{
+  const cases=[
+    [[{id:'west',name:'美西'},{id:'general',name:'通用'}],'general'],
+    [[{id:'general',name:'通用'},{id:'shipping',name:'发货'}],'shipping'],
+    [[{id:'a',name:'发货'},{id:'b',name:'发货'},{id:'c',name:'通用'}],''],
+    [[{id:'a',name:'通用'},{id:'b',name:'通用'}],''],
+    [[{id:'a',name:'通用'},{id:'a',name:'通用'}],'a'],
+  ];
+  for(const [options,expected] of cases){
+    const updated={status:'needs_input',step:'warehouse',choices:{warehouse:{options,refreshedAt:'2026-11-03T08:00:00Z'}}};
+    const s=setup(async()=>updated);await s.ctx.jobLogistics(s.dialog,s.row,s.job,s.message);
+    const [select,,,resume]=s.dialog.content.children;assert.equal(select.value,expected);
+    assert.equal(resume.disabled,!expected);
+  }
+});
+
+test('a valid confirmed warehouse is kept ahead of any default',async()=>{
+  const updated={status:'needs_input',step:'warehouse',choices:{warehouse:{selectedId:'custom',
+    options:[{id:'custom',name:'指定仓'},{id:'general',name:'通用'}]}}};
+  const s=setup(async()=>updated);await s.ctx.jobLogistics(s.dialog,s.row,s.job,s.message);
+  const [select,,,resume]=s.dialog.content.children;assert.equal(select.value,'custom');
+  await resume.action();assert.equal(s.actions[0][2].selectedId,'custom');
+});

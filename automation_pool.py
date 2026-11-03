@@ -63,6 +63,19 @@ def normalize_edit_concurrency(value: Any) -> int:
     return value
 
 
+def select_logistics_default(options: list[dict[str, str]], kind: str) -> dict[str, str] | None:
+    """Prefer shipping warehouses, then general; never resolve an ambiguous tier."""
+    if kind not in {'freight', 'warehouse'}:
+        raise ValueError('物流配置类型不正确')
+    names = ('通用',) if kind == 'freight' else ('发货', '通用')
+    for name in names:
+        matches = [option for option in options if option.get('id')
+                   and str(option.get('name', '')).strip() == name]
+        if matches:
+            return matches[0] if len({str(option['id']) for option in matches}) == 1 else None
+    return None
+
+
 class AutomationPool:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -1007,9 +1020,9 @@ class AutomationPool:
         """
         if kind not in {'freight', 'warehouse'}:
             raise ValueError('物流配置类型不正确')
-        label, default = ('运费模板', '通用') if kind == 'freight' else ('发货仓库', '发货')
-        defaults = [option for option in options if str(option.get('name', '')).strip() == default]
-        chosen_default = str(defaults[0]['id']) if queue_unique_default and len(defaults) == 1 else ''
+        label = '运费模板' if kind == 'freight' else '发货仓库'
+        default_option = select_logistics_default(options, kind) if queue_unique_default else None
+        chosen_default = str(default_option['id']) if default_option else ''
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
         refreshed = queued = 0
         with closing(self._connect()) as connection, connection:
@@ -1020,9 +1033,12 @@ class AutomationPool:
                   AND NOT EXISTS (SELECT 1 FROM automation_job_deletions d WHERE d.job_id=j.job_id)""",
                 (kind, shop_id, site, kind)))
             for row in rows:
-                selected = chosen_default or row['selected_id']
-                if not any(str(option.get('id')) == selected for option in options):
-                    selected = ''
+                previous = row['selected_id']
+                previous_valid = bool(previous) and any(str(option.get('id')) == previous for option in options)
+                selected = previous if previous_valid else chosen_default
+                selected_name = next((str(option.get('name') or option['id']) for option in options
+                                      if str(option.get('id')) == selected), '')
+                selection_note = ('沿用已选' if previous_valid else '自动选择默认') + f'“{selected_name}”'
                 connection.execute("""INSERT INTO automation_job_choices (job_id, kind, options_json, selected_id, refreshed_at)
                     VALUES (?, ?, ?, ?, ?) ON CONFLICT(job_id, kind) DO UPDATE SET
                     options_json=excluded.options_json, selected_id=excluded.selected_id,
@@ -1037,11 +1053,11 @@ class AutomationPool:
                         continue
                     cursor = connection.execute("""UPDATE automation_jobs SET status='queued',publish_after_save=0,
                         auto_override_attempts=0,message=?,updated_at=? WHERE job_id=? AND status='needs_input' AND step=?""",
-                        (f'已同步店铺最新{label}，自动选择默认“{default}”并重新加入编辑队列', now, row['job_id'], kind))
+                        (f'已同步店铺最新{label}，{selection_note}并重新加入编辑队列', now, row['job_id'], kind))
                     if cursor.rowcount:
                         connection.execute("""INSERT INTO automation_job_events (job_id, step, status, message, created_at)
                             VALUES (?, ?, 'queued', ?, ?)""",
-                            (row['job_id'], kind, f'已同步店铺配置，自动选择默认“{default}”并重新排队', now))
+                            (row['job_id'], kind, f'已同步店铺配置，{selection_note}并重新排队', now))
                         queued += 1
                 else:
                     message = (f'当前店铺与站点没有可选的{label}，请在店铺配置后刷新' if not options else

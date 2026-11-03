@@ -12,6 +12,9 @@ class LogisticsRefreshTests(unittest.TestCase):
 
     def setUp(self):
         fixtures.SharedAutomationTests.setUp(self)
+        # The fixture seeds pool 1 directly; rotate new fixture rows from pool 2.
+        for account in (1, 2):
+            server.automation_pool(account).assignment_cursor = 1
         # These tests assert template synchronization/enqueueing, not worker
         # execution. Keep a resumed worker from outliving the fixture mocks.
         launch = patch('shared_automation.Thread')
@@ -83,6 +86,81 @@ class LogisticsRefreshTests(unittest.TestCase):
         self.assertEqual(secondary.get_job(second)['choices']['freight']['selectedId'], 'new-default')
         self.assertEqual(tertiary.get_job(third)['choices']['freight']['selectedId'], 'new-default')
         start.assert_called_once()
+
+    def test_unique_general_warehouse_requeues_matching_pools_and_filters_other_site(self):
+        primary, first = self.paused(1, 123, 'warehouse')
+        secondary, second = self.paused(1, 124, 'warehouse')
+        response = {'result':'success','code':'success','data':{'shopIdAndWarehouseListMap':{'7':[
+            {'warehouseId':'eu-shipping','warehouseName':'发货','site':'EU'},
+            {'warehouseId':'west','warehouseName':'美西','site':'US'},
+            {'warehouseId':'general','warehouseName':'通用','site':'US'}]}}}
+        with patch.object(server.MiaoShouClient,'post',return_value=response):
+            status, body = self.action(1, first)
+        self.assertEqual(status,200,body)
+        self.assertEqual(body['data']['autoQueuedJobs'],2)
+        for pool, job_id in ((primary,first),(secondary,second)):
+            job = pool.get_job(job_id)
+            self.assertEqual(job['status'],'queued')
+            self.assertEqual(job['choices']['warehouse']['selectedId'],'general')
+            self.assertNotIn('eu-shipping',[o['id'] for o in job['choices']['warehouse']['options']])
+            self.assertIn('默认“通用”',job['message'])
+            self.assertFalse(job['publishAfterSave'])
+
+    def test_ambiguous_general_warehouse_stays_paused(self):
+        pool, job_id = self.paused(kind='warehouse')
+        response = {'result':'success','code':'success','data':{'shopIdAndWarehouseListMap':{'7':[
+            {'warehouseId':'a','warehouseName':'通用','site':'US'},
+            {'warehouseId':'b','warehouseName':'通用','site':'US'}]}}}
+        with patch.object(server.MiaoShouClient,'post',return_value=response):
+            status, body = self.action(1, job_id)
+        self.assertEqual(status,200,body)
+        self.assertEqual(body['data']['autoQueuedJobs'],0)
+        self.assertEqual(pool.get_job(job_id)['status'],'needs_input')
+
+    def test_refresh_preserves_a_still_valid_confirmed_warehouse(self):
+        pool, job_id = self.paused(kind='warehouse')
+        pool.resume_job(job_id,'old')
+        pool.pause_for_problem(job_id,'warehouse','重新核对仓库')
+        response = {'result':'success','code':'success','data':{'shopIdAndWarehouseListMap':{'7':[
+            {'warehouseId':'old','warehouseName':'指定仓','site':'US'},
+            {'warehouseId':'general','warehouseName':'通用','site':'US'}]}}}
+        with patch.object(server.MiaoShouClient,'post',return_value=response):
+            status, body = self.action(1, job_id)
+        self.assertEqual(status,200,body)
+        self.assertEqual(pool.get_job(job_id)['choices']['warehouse']['selectedId'],'old')
+        self.assertIn('沿用已选“指定仓”',body['data']['message'])
+
+    def test_cross_account_copy_preparation_accepts_general_warehouse_without_writes(self):
+        from types import SimpleNamespace
+        item = copy.deepcopy(self.remote[(1,123)])
+        item['collectBoxDetailShopList'] = [{'shopId':7}]
+        calls = []
+        def vendor(path,payload):
+            calls.append((path,payload))
+            if path == server.HALF_FREIGHT:
+                return {'data':{'shopIdAndFreightTemplateListMap':{'7':[
+                    {'templateId':'freight','templateName':'通用','site':'US'}]}}}
+            self.assertEqual(path,server.HALF_WAREHOUSE)
+            return {'data':{'shopIdAndWarehouseListMap':{'7':[
+                {'warehouseId':'warehouse','warehouseName':'通用','site':'US'}]}}}
+        transfer = {'targetAccountId':2,'site':'US'}
+        with patch.object(self.service,'worker',return_value=SimpleNamespace(_vendor=vendor)) as worker:
+            self.service._prepare_copy_logistics(item,transfer)
+        worker.assert_called_once_with(2,transfer)
+        self.assertEqual([p for p,_ in calls],[server.HALF_FREIGHT,server.HALF_WAREHOUSE])
+        self.assertEqual(item['collectBoxDetailShopList'][0]['siteWarehouseList'][0]['warehouseId'],'warehouse')
+        self.assertTrue(all(sku['siteAndWarehouseIdAndStockMap']['US']['warehouse']==1000 for sku in item['skuMap'].values()))
+
+    def test_cached_general_warehouse_needs_no_unnecessary_resync(self):
+        calls = []
+        def vendor(path,payload):
+            calls.append(payload)
+            return {'data':{'shopIdAndWarehouseListMap':{'7':[
+                {'warehouseId':'eu','warehouseName':'发货','site':'EU'},
+                {'warehouseId':'us','warehouseName':'通用','site':'US'}]}}}
+        rows = server.automation_logistic_rows(vendor,'warehouse',7,'US')
+        self.assertEqual(server.automation_default_logistic_id(rows,'warehouse'),'us')
+        self.assertEqual([x['isRsync'] for x in calls],[0])
 
     def test_failed_or_malformed_sync_keeps_previous_choices(self):
         pool, job_id = self.paused()
