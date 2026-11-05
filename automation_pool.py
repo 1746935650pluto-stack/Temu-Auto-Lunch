@@ -238,6 +238,10 @@ class AutomationPool:
         connection.execute('CREATE INDEX IF NOT EXISTS automation_jobs_target_idx ON automation_jobs(detail_id, site, shop_id, status)')
         connection.execute('CREATE INDEX IF NOT EXISTS automation_publish_items_job_idx ON automation_publish_batch_items(job_id, status, batch_id)')
         connection.execute('CREATE INDEX IF NOT EXISTS automation_items_created_idx ON automation_items(created_at DESC, CAST(detail_id AS TEXT) DESC)')
+        # Keep collection sorting on compact metadata instead of decoding every
+        # full product snapshot on each page. SQLite maintains this on imports.
+        connection.execute("CREATE INDEX IF NOT EXISTS automation_items_collection_time_idx ON automation_items("
+                           "json_extract(snapshot_json,'$.gmtCreate'), created_at, detail_id)")
         return connection
 
     def _read_connect(self):

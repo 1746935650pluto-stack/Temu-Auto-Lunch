@@ -28,6 +28,8 @@ class CollectionReadCache:
             db.execute('''CREATE TABLE IF NOT EXISTS collection_cached_rows (
                 scope TEXT NOT NULL, detail_id TEXT NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY(scope, detail_id))''')
+            db.execute("CREATE INDEX IF NOT EXISTS collection_cached_rows_time_idx ON collection_cached_rows("
+                       "scope, detail_id, CASE WHEN json_valid(payload) THEN json_extract(payload,'$.gmtCreate') END)")
             # A normal page cache is deliberately allowed to contain rows from
             # different reads.  Personnel filtering is different: it must use
             # one known-complete listing so removed/old rows never leak into a

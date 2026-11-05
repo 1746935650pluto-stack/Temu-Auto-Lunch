@@ -5,7 +5,8 @@ use compact routing metadata; item pages are selected in SQLite before JSON
 snapshot fields are read.  Databases are never attached for writes.
 """
 from contextlib import contextmanager, closing, ExitStack
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import math
 import json
 from pathlib import Path
 import re
@@ -119,6 +120,7 @@ def reader(path, attachments=(), *, timeout=3):
     with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=timeout)) as db:
         db.row_factory = sqlite3.Row
         db.create_function('casefold', 1, lambda value: str(value or '').casefold(), deterministic=True)
+        db.create_function('collection_timestamp', 1, collection_timestamp, deterministic=True)
         for name, attached in attachments:
             # Names are internal constants; values are parameterized read-only URIs.
             if name not in {'shared', 'people'}:
@@ -126,6 +128,27 @@ def reader(path, attachments=(), *, timeout=3):
             db.execute(f'ATTACH DATABASE ? AS {name}', (Path(attached).resolve().as_uri() + '?mode=ro',))
         db.execute('PRAGMA query_only=ON')
         yield db
+
+
+def collection_timestamp(value):
+    """MiaoShou's unzoned collection dates are Beijing time; unknowns sort last."""
+    if value is None or isinstance(value, bool):
+        return 0.0
+    text = str(value).strip()
+    try:
+        number = float(text)
+        if not math.isfinite(number) or number <= 0:
+            return 0.0
+        return number / 1000 if number >= 100_000_000_000 else number
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=8)))
+        return max(0.0, parsed.timestamp())
+    except (ValueError, OverflowError, OSError):
+        return 0.0
 
 
 class PersonnelResolver:
@@ -679,7 +702,23 @@ class TaskQueries:
             parameters = ([account['scope']] if person else []) + args
             with reader(physical.path, [('shared', self.s.path), ('people', store.path)]) as db:
                 total += db.execute('SELECT COUNT(*)' + sql, parameters).fetchone()[0]
-            statement = 'SELECT i.detail_id,i.created_at' + sql + ' ORDER BY i.created_at DESC,CAST(i.detail_id AS TEXT) DESC'
+                has_cache = db.execute("SELECT 1 FROM people.sqlite_master WHERE type='table' "
+                                       "AND name='collection_cached_rows'").fetchone()
+                has_time_index = db.execute("SELECT 1 FROM people.sqlite_master WHERE type='index' "
+                                            "AND name='collection_cached_rows_time_idx'").fetchone()
+            # Sort before LIMIT, including the exact-account list-cache fallback
+            # used by the display. Sorting only hydrated pages hides newer items.
+            collection_time = "NULLIF(json_extract(i.snapshot_json,'$.gmtCreate'),'')"
+            if has_cache:
+                collection_time = ("COALESCE(" + collection_time + ", (SELECT CASE WHEN json_valid(cr.payload) "
+                    "THEN json_extract(cr.payload,'$.gmtCreate') END FROM people.collection_cached_rows cr " +
+                    ('INDEXED BY collection_cached_rows_time_idx ' if has_time_index else '') +
+                    "WHERE cr.scope=? AND cr.detail_id=CAST(i.detail_id AS TEXT)))")
+                parameters = [account['scope'], *parameters]
+            statement = ('SELECT i.detail_id,i.created_at,collection_timestamp(' + collection_time + ') AS collected_sort' +
+                         sql.replace('FROM automation_items i',
+                             'FROM automation_items i INDEXED BY automation_items_collection_time_idx', 1) +
+                         ' ORDER BY collected_sort DESC,i.created_at DESC,CAST(i.detail_id AS TEXT) DESC')
             statements.append((physical, account, number, statement, parameters))
         # Clamp against the full filtered count before constructing SQLite's
         # signed-integer LIMIT, including after deletion or an oversized page.
@@ -691,8 +730,9 @@ class TaskQueries:
                     statement += ' LIMIT ?'
                 for row in db.execute(statement, parameters if all_rows else [*parameters, limit]):
                     candidates.append({'sourceAccountId': account['id'], 'detailId': row['detail_id'], 'poolId': number,
-                        'key': f"{account['id']}:{row['detail_id']}", 'createdAt': row['created_at']})
-        candidates.sort(key=lambda r: (r['createdAt'], r['key']), reverse=True)
+                        'key': f"{account['id']}:{row['detail_id']}", 'createdAt': row['created_at'],
+                        'collectedSort': row['collected_sort']})
+        candidates.sort(key=lambda r: (r['collectedSort'], r['createdAt'], r['key']), reverse=True)
         start = (data['page'] - 1) * data['pageSize']
         selected = candidates if all_rows else candidates[start:start + data['pageSize']]
         hydrated = {}
