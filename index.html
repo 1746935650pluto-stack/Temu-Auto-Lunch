@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.192" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.193" />
   </head>
   <body>
     <div class="app-shell">
@@ -26,13 +26,7 @@
               <button type="button" class="collection-nav-add" id="addEmptyCollection">＋ 新增空采集箱</button>
             </div>
           </div>
-          <div class="miaoshou-collection-nav" id="orderAccountsNav">
-            <button type="button" class="nav-item" id="orderAccountsToggle" aria-expanded="false" aria-controls="orderAccountsChildren"><span>▤</span>订单中心<span class="collection-nav-chevron" aria-hidden="true">›</span></button>
-            <div class="miaoshou-collection-children" id="orderAccountsChildren" role="group" aria-label="订单中心账号" hidden>
-              <button type="button" class="nav-item" data-page="orders" data-order-account-id="1"><span>1</span>妙手采集箱 1</button>
-              <button type="button" class="nav-item" data-page="orders" data-order-account-id="2"><span>2</span>妙手采集箱 2</button>
-            </div>
-          </div>
+          <button class="nav-item" data-page="dataStatistics"><span>▥</span>数据统计</button>
           <button class="nav-item" data-page="zhihou"><span>ZH</span>智猴物流</button>
           <button class="nav-item" data-page="pricing"><span>¥</span>自动核价</button>
           <button class="nav-item" data-page="collectionAutomation"><span>⇣</span>自动化采集</button>
@@ -44,7 +38,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.192">当前版本 V1.2.192</span>
+          <span class="app-version" data-resource-version="1.2.193">当前版本 V1.2.193</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -442,7 +436,27 @@
             <div id="publishRecordsList" class="publish-record-list"><p class="live-empty">正在读取发布记录…</p></div>
           </div>
         </section>
+        <div class="statistics-tabs" id="statisticsTabs" role="tablist" aria-label="数据统计" hidden>
+          <button type="button" class="button primary" id="statisticsDailyTab" role="tab" aria-selected="true" aria-controls="dataStatistics">每日统计</button>
+          <button type="button" class="button subtle" id="statisticsOrdersTab" role="tab" aria-selected="false" aria-controls="orders">订单明细</button>
+        </div>
+        <section class="page" id="dataStatistics" aria-label="每日数据统计">
+          <div class="statistics-head"><div><p class="eyebrow">DAILY ACCOUNT REPORT</p><h1>数据统计</h1><p>每天每个妙手账号的采集入池、编辑、发布和订单数据 · 北京时间</p></div><button type="button" class="button subtle" id="statisticsExport" disabled>导出 CSV</button></div>
+          <form class="statistics-filters" id="statisticsFilters">
+            <label>开始日期<input type="date" id="statisticsStart" required /></label><label>结束日期<input type="date" id="statisticsEnd" required /></label>
+            <label>妙手账号<select id="statisticsAccount"><option value="all">全部账号</option></select></label>
+            <button class="button primary" type="submit">查询统计</button><button class="button subtle" type="button" id="statisticsToday">今天</button><button class="button subtle" type="button" id="statisticsWeek">近 7 天</button>
+          </form>
+          <p id="statisticsStatus" role="status" aria-live="polite">选择日期后查询，每次最多 93 天。</p>
+          <div class="statistics-cards" id="statisticsCards"></div>
+          <div class="statistics-table-wrap" tabindex="0" aria-label="每日账号数据，可横向滚动"><table class="statistics-table"><thead><tr><th>日期</th><th>妙手账号</th><th>采集入池</th><th>新建任务</th><th>保存成功</th><th>发布已提交</th><th>编辑异常</th><th>发布异常</th><th>待选择</th><th>订单数</th><th>包裹数</th><th>已知件数</th><th>订单金额</th></tr></thead><tbody id="statisticsRows"></tbody></table></div>
+          <details class="statistics-notes"><summary>统计口径与数据完整性</summary><p>采集入池按本机首次入池日期计商品；任务按创建日期计。保存成功、发布已提交按事件发生日期计，同一任务同一天同一指标去重；重试后成功与之前的异常可以同时存在。发布已提交表示妙手接受请求，最终上架结果请查看发布记录。</p><p>订单按实际下单日期、账号＋店铺＋订单号去重，拆分包裹只计一单；金额取同订单最新一条记录，按币种分别相加，包含取消／退款订单，属于订单原始金额，非净收入。未提供件数或金额的记录会注明缺失。</p><p>统计覆盖本机现存入池和任务历史，以及本版本起保留的订单历史。此前已被替换或清理的记录无法补回。查询仅读取本地数据；新订单请到订单明细同步，统计缓存最多 15 秒。</p></details>
+        </section>
         <section class="page" id="orders">
+          <div class="statistics-order-accounts" id="orderAccountsNav">
+            <span id="orderAccountsToggle" aria-expanded="true">订单账号</span>
+            <div id="orderAccountsChildren" role="group" aria-label="订单明细账号"><button class="nav-item" type="button" data-page="orders" data-order-account-id="1"><span>1</span>妙手采集箱 1</button></div>
+          </div>
           <div class="publish-records-page">
             <div class="publish-records-head"><div><p class="eyebrow">MIAOSHOU / READ-ONLY ORDER SYNC</p><h1 id="orderCenterTitle">订单中心 / 妙手采集箱 1</h1><p id="orderAccountDescription">对应妙手采集箱 1；只读取并保存该账号的订单，不修改或回写妙手。</p></div><button class="button primary" id="syncOrders">同步订单记录</button></div>
             <div class="order-sync-summary"><span id="orderSyncCount">本地订单 0 条</span><span id="orderLastSynced">尚未同步</span><span id="orderAutoSyncSchedule">自动同步：正在读取</span><span class="status-pill neutral" id="orderSyncStatus">正在检查接口</span><label class="order-shop-filter">店铺<select id="orderShopFilter"><option value="">全部店铺</option></select></label></div>
@@ -696,18 +710,19 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./account-context.js?v=1.2.192"></script>
-  <script src="./local-view-cache.js?v=1.2.192"></script>
-  <script src="./live-status.js?v=1.2.192"></script>
+    <script src="./data-statistics.js?v=1.2.193"></script>
+    <script src="./account-context.js?v=1.2.193"></script>
+  <script src="./local-view-cache.js?v=1.2.193"></script>
+  <script src="./live-status.js?v=1.2.193"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.192"></script>
-  <script src="./shared-automation.js?v=1.2.192"></script>
-  <script src="./pricing-workbench.js?v=1.2.192"></script>
-  <script src="./app.js?v=1.2.192"></script>
+  <script src="./diagnostics-panel.js?v=1.2.193"></script>
+  <script src="./shared-automation.js?v=1.2.193"></script>
+  <script src="./pricing-workbench.js?v=1.2.193"></script>
+  <script src="./app.js?v=1.2.193"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
     <script src="./automatic-tasks.js?v=1.2.173"></script>
-    <script src="./desktop-ui.js?v=1.2.192"></script>
-    <script src="./live-editor.js?v=1.2.192"></script>
+    <script src="./desktop-ui.js?v=1.2.193"></script>
+    <script src="./live-editor.js?v=1.2.193"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

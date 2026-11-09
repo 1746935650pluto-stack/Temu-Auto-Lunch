@@ -24,7 +24,7 @@
     const local = url.origin === window.location.origin && url.pathname.startsWith('/api/');
     // Diagnostics are global unless their caller explicitly asks for an
     // account. Do not silently filter the all-account performance table.
-    const scoped = local && !/^\/api\/(orders|miaoshou-accounts|settings|performance|automation\/shared)(\/|$)/.test(url.pathname);
+    const scoped = local && !/^\/api\/(orders|miaoshou-accounts|settings|performance|statistics|automation\/shared)(\/|$)/.test(url.pathname);
     const headers = new Headers(options.headers || (typeof input !== 'string' ? input.headers : undefined));
     if (scoped) headers.set('X-Miaoshou-Account-Id', String(id));
     const writing = local && !['GET', 'HEAD'].includes((options.method || input.method || 'GET').toUpperCase());

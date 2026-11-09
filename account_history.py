@@ -82,6 +82,8 @@ def clear_history(account_id, slot_store, pool_path, order_path, shared_path, ba
             connection.execute(f'DELETE FROM {alias}.automation_job_events')
         if 'orders' in paths:
             connection.execute('DELETE FROM orders.synced_orders')
+            if connection.execute("SELECT 1 FROM orders.sqlite_master WHERE name='order_statistics_history'").fetchone():
+                connection.execute('DELETE FROM orders.order_statistics_history')
         if 'shared' in paths:
             # Retain cross-account copy provenance for OTHER accounts and their
             # duplicate protection; delete only this account's task history.

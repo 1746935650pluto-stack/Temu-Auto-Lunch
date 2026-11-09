@@ -61,6 +61,7 @@ from item_editor import (apply_blade_length_default, apply_fabric_weight_default
                          apply_food_contact_usage_default, fill_empty_sale_options, fingerprint, normalize_item,
                          normalize_show_size_template_ids, remove_inactive_numeric_attributes)
 from order_sync import OrderSyncStore, extract_package_rows
+from daily_statistics import DailyStatistics
 from attribute_defaults import apply_attribute_defaults, default_rule
 from zhihou import ZhiHouApiError, ZhiHouClient
 from launcher_support import workbench_id
@@ -71,7 +72,8 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.192'
+APP_VERSION = '1.2.193'
+DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
 ACCOUNT_VENDOR_ACTIVE = {}
@@ -2624,7 +2626,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return False
         self.collection_account_id = 1
         route = urlsplit(self.path)
-        if not route.path.startswith('/api/') or route.path.startswith(('/api/orders', '/api/automation/shared/', '/api/settings/', '/api/maintenance/', '/api/zhihou/')):
+        if not route.path.startswith('/api/') or route.path.startswith(('/api/orders', '/api/statistics/', '/api/automation/shared/', '/api/settings/', '/api/maintenance/', '/api/zhihou/')):
             return True
         try:
             query_id = parse_qs(route.query, keep_blank_values=True).get('accountId', [None])[0]
@@ -2744,7 +2746,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         value = json.loads(self.rfile.read(size))
         if not isinstance(value, dict):
             raise ValueError("请求内容必须是对象")
-        if not urlsplit(self.path).path.startswith(('/api/orders', '/api/automation/shared/')) and 'accountId' in value:
+        if not urlsplit(self.path).path.startswith(('/api/orders', '/api/statistics/', '/api/automation/shared/')) and 'accountId' in value:
             explicit_account = self.headers.get('X-Miaoshou-Account-Id') is not None or 'accountId' in parse_qs(urlsplit(self.path).query)
             if not explicit_account:
                 self.collection_account_id = order_account(value['accountId'])['id']
@@ -3170,6 +3172,20 @@ class AppHandler(SimpleHTTPRequestHandler):
             except sqlite3.Error:
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机采集箱目录读取失败')
             return
+        if route.path == '/api/statistics/daily':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页查询')
+                return
+            try:
+                accounts = miaoshou_account_slots()
+                data = DAILY_STATISTICS.report(accounts, AUTOMATION_POOL.path, ORDER_SYNC_STORE.path,
+                                               parse_qs(route.query, keep_blank_values=True))
+                self._json(HTTPStatus.OK, {'data': data})
+            except ValueError as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except (sqlite3.Error, OSError):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机统计读取未完成，请稍后刷新；未改动商品或队列')
+            return
         if route.path == '/api/orders':
             if not self._same_origin():
                 self._error(HTTPStatus.FORBIDDEN, '只接受本地网页查询')
@@ -3302,7 +3318,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         # The same directory also contains .env and server.py. Only public
         # browser assets are served, so secrets cannot be fetched over HTTP.
-        if route.path in {"/", "/index.html", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
+        if route.path in {"/", "/index.html", "/data-statistics.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
             super().do_GET()
             return
         self._error(HTTPStatus.NOT_FOUND, "未找到页面")

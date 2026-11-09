@@ -45,8 +45,10 @@ test('global performance reads never inherit the selected collection header', as
     await window.fetch('/api/performance?accountId=4');
     assert.equal(requests[1].options.headers.has('X-Miaoshou-Account-Id'),false);
     // Explicit diagnostic scoping still remains available to its caller.
+    await window.fetch('/api/statistics/daily?accountId=all');
+    assert.equal(requests[2].options.headers.has('X-Miaoshou-Account-Id'),false);
     await window.fetch('/api/performance',{headers:{'X-Miaoshou-Account-Id':'4'}});
-    assert.equal(requests[2].options.headers.get('X-Miaoshou-Account-Id'),'4');
+    assert.equal(requests[3].options.headers.get('X-Miaoshou-Account-Id'),'4');
   }
 });
 

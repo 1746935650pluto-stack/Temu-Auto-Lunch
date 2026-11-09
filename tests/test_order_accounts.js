@@ -5,11 +5,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 
-test('orders folder is immediately after collections and before automation navigation',()=>{
+test('order details are integrated under statistics with account switching',()=>{
   const html = fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
-  assert.ok(html.indexOf('id="miaoshouCollectionNav"') < html.indexOf('id="orderAccountsNav"'));
-  assert.ok(html.indexOf('id="orderAccountsNav"') < html.indexOf('data-page="collectionAutomation"'));
-  assert.match(html, /id="orderAccountsChildren"[^>]*hidden/);
+  assert.match(html, /data-page="dataStatistics"/);
+  assert.ok(html.indexOf('id="orders"') < html.indexOf('id="orderAccountsNav"'));
+  assert.match(html, /id="statisticsOrdersTab"/);
 });
 
 test('orders retain the shared page width and enlarged record layout',()=>{
@@ -156,7 +156,7 @@ test('order children mirror collection names and display sequence, expand withou
   assert.deepEqual($('#orderAccountsChildren').children.map(c=>c.dataset.orderAccountId),['1','2','3']);
   assert.deepEqual($('#orderAccountsChildren').children.map(c=>c.children[0].textContent),['1','2','3']);
   assert.deepEqual($('#orderAccountsChildren').children.map(c=>c.children[1].text),['NL','Bao','LULU']);
-  assert.equal($('#orderAccountsChildren').hidden,true);
+  assert.equal($('#orderAccountsChildren').hidden,false);
   ctx.setOrderAccountsExpanded(true);
   assert.equal($('#orderAccountsToggle')['aria-expanded'],'true');
   $('#orderShopFilter').value='old-shop';

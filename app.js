@@ -171,6 +171,7 @@ function activatePage(pageId) {
   if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); }
   else clearDeepSeekInput();
   const displayPage = pageId;
+  window.dataStatistics?.setPage(pageId);
   document.body.classList.toggle('workbench-active', displayPage === 'workbench');
   document.body.classList.toggle('zhihou-active', pageId === 'zhihou');
   document.body.classList.toggle('pricing-active', pageId === 'pricing');
@@ -190,11 +191,12 @@ function activatePage(pageId) {
     const accountId = Number(item.dataset.accountId || 0);
     const isAccountMatch = !accountId || (pageId === 'workbench' && accountId === activeMiaoshouCollectionAccountId)
       || (pageId === 'collectionAccount' && accountId === activeMiaoshouCollectionAccountId);
-    item.classList.toggle('active', item.dataset.page === pageId && isAccountMatch);
+    item.classList.toggle('active', (item.dataset.page === pageId || (item.dataset.page === 'dataStatistics' && pageId === 'orders')) && isAccountMatch);
   });
   $$('.page').forEach((page) => page.classList.toggle('active', page.id === displayPage));
   if (pageId === 'publishRecords' && liveState.mode !== 'demo') loadLiveRecords();
   if (pageId === 'orders') loadOrders();
+  if (pageId === 'dataStatistics') window.dataStatistics?.open();
   if (pageId === 'zhihou') window.zhiHouModule?.refresh();
   if (pageId === 'pricing') window.pricingWorkbench?.open();
   if (pageId === 'automaticTasks') {
@@ -971,7 +973,7 @@ let orderRequestRevision = 0;
 const syncingOrderAccounts = new Set();
 function setOrderAccountsExpanded(expanded) {
   orderAccountsExpanded = Boolean(expanded);
-  $('#orderAccountsChildren').hidden = !orderAccountsExpanded;
+  $('#orderAccountsChildren').hidden = false;
   $('#orderAccountsToggle').setAttribute('aria-expanded', String(orderAccountsExpanded));
 }
 function orderAccountName(account) {
@@ -980,6 +982,7 @@ function orderAccountName(account) {
     ? account.name : `妙手采集箱 ${id}`;
 }
 function renderOrderAccounts(accounts) {
+  window.dataStatistics?.accountsChanged(accounts);
   const container = $('#orderAccountsChildren');
   container.replaceChildren();
   let displayNumber = 0;
@@ -3539,7 +3542,7 @@ window.addEventListener('live-editor-closed', () => { liveState.editing = false;
 window.addEventListener('live-content-saved', () => { liveState.editing = false; liveState.editorStage = 2; renderLiveFlow(); });
 $$('.nav-item').forEach((button) => {
   if (button.id === 'miaoshouCollectionToggle') bindCollectionFolderNavigation(button);
-  else if (button.id === 'orderAccountsToggle') button.addEventListener('click', () => setOrderAccountsExpanded(!orderAccountsExpanded));
+  else if (button.id === 'orderAccountsToggle') button.addEventListener('click', () => setOrderAccountsExpanded(true));
   else if (button.dataset.orderAccountId) button.addEventListener('click', () => openOrderAccount(Number(button.dataset.orderAccountId)));
   else if (button.dataset.accountId) bindCollectionAccountNavigation(button);
   else button.addEventListener('click', () => activatePage(button.dataset.page));
