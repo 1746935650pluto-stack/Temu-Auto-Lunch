@@ -223,6 +223,39 @@ class PerformanceVendorTests(unittest.TestCase):
             self.addCleanup(mocked.stop)
         self.handler = server.AppHandler.__new__(server.AppHandler)
 
+    def test_order_pages_retry_frequent_request_errors_with_conservative_pacing(self):
+        server=self.server;payload={'page':17,'pageSize':100};success={'result':'success','code':'success'}
+        with (patch.object(server,'MiaoShouClient') as client,
+              patch.object(self.runtime,'request',wraps=self.runtime.request) as requests,
+              patch.object(self.runtime.lane(5),'backoff',wraps=self.runtime.lane(5).backoff) as cooldown):
+            client.return_value.post.side_effect=[{'code':'请求太频繁，请稍后重试'},success]
+            self.assertEqual(self.handler._account_vendor(server.MIAOSHOU_PACKAGE_LIST_PATH,payload,5),success)
+            self.assertEqual(client.return_value.post.call_count,2)
+            self.assertTrue(all(call.args==(server.MIAOSHOU_PACKAGE_LIST_PATH,payload) for call in client.return_value.post.call_args_list))
+            self.assertTrue(all(call.args==(5,3.0) for call in requests.call_args_list))
+            cooldown.assert_called_once_with(5.0)
+            row=self.runtime.snapshot(5)['accounts'][0]
+            self.assertEqual((row['requestCount'],row['rateLimitedCount']),(2,1))
+
+    def test_order_transport_errors_retry_but_authentication_errors_do_not(self):
+        server=self.server;success={'result':'success','code':'success'}
+        with patch.object(server,'MiaoShouClient') as client:
+            client.return_value.post.side_effect=[RuntimeError('MiaoShou returned HTTP 503'),success]
+            self.assertEqual(self.handler._account_vendor(server.MIAOSHOU_PACKAGE_LIST_PATH,{},5),success)
+            self.assertEqual(client.return_value.post.call_count,2)
+            client.return_value.post.reset_mock();client.return_value.post.side_effect=[{'code':'授权已失效'}]
+            with self.assertRaisesRegex(RuntimeError,'授权已失效'):
+                self.handler._account_vendor(server.MIAOSHOU_PACKAGE_LIST_PATH,{},5)
+            self.assertEqual(client.return_value.post.call_count,1)
+
+    def test_order_rate_limit_retries_stop_at_the_configured_bound(self):
+        server=self.server
+        with patch.object(server,'MiaoShouClient') as client:
+            client.return_value.post.return_value={'code':'请求太频繁，请稍后重试'}
+            with self.assertRaisesRegex(RuntimeError,'频繁'):
+                self.handler._account_vendor(server.MIAOSHOU_PACKAGE_LIST_PATH,{},5)
+            self.assertEqual(client.return_value.post.call_count,2)
+
     def test_actual_vendor_attempts_count_once_and_unknown_write_is_not_replayed(self):
         server = self.server
         success = {'result': 'success', 'code': 'success'}

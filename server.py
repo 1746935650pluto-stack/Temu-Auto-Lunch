@@ -2729,21 +2729,29 @@ class AppHandler(SimpleHTTPRequestHandler):
         # publish requests retain the established conservative 1.15s pacing.
         lane = RUNTIME.lane(account_id)
         detail_read = path in {HALF_SITE_DETAIL, HALF_SHOP_DETAIL}
-        interval = POOL_IMPORT_DETAIL_INTERVAL_SECONDS if detail_read else 1.15
-        attempts = MIAOSHOU_RATE_LIMIT_RETRIES + 1 if detail_read else 1
+        order_read = path == MIAOSHOU_PACKAGE_LIST_PATH
+        retry_read = detail_read or order_read
+        interval = 3.0 if order_read else POOL_IMPORT_DETAIL_INTERVAL_SECONDS if detail_read else 1.15
+        attempts = MIAOSHOU_RATE_LIMIT_RETRIES + 1 if retry_read else 1
         for attempt in range(attempts):
             with RUNTIME.request(account_id, interval) as observation:
-                result = MiaoShouClient(account_id).post(path, payload)
-                if result.get("result") == "success" and result.get("code") == "success":
-                    return result
-                reason = result.get("reason") or result.get("message") or result.get("code") or "妙手接口调用失败"
-                error = RuntimeError(str(reason)[:300])
+                try:
+                    result = MiaoShouClient(account_id).post(path, payload)
+                    if result.get("result") == "success" and result.get("code") == "success":
+                        return result
+                    reason = result.get("reason") or result.get("message") or result.get("code") or "妙手接口调用失败"
+                    error = RuntimeError(str(reason)[:300])
+                except RuntimeError as failure:
+                    error = failure
                 observation.failed(error)
-            if not detail_read or not _is_miaoshou_transient_error(error) or attempt + 1 >= attempts:
+                order_limited = order_read and ('频繁' in str(error) or '429' in str(error))
+                if order_limited:
+                    observation.rate_limited = True
+            if not retry_read or not (_is_miaoshou_transient_error(error) or order_limited) or attempt + 1 >= attempts:
                 raise error
             # One shared cooldown prevents other import workers from making
             # the same rate-limit burst while this read is retried.
-            backoff = min(0.75 * (2 ** attempt), 8.0)
+            backoff = min(5.0 * (2 ** attempt), 60.0) if order_read else min(0.75 * (2 ** attempt), 8.0)
             lane.backoff(backoff)
         raise RuntimeError('妙手详情读取重试状态异常')
 
