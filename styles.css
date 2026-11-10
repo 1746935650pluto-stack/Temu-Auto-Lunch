@@ -869,4 +869,11 @@ details.shared-queue-activity > summary::marker { color: #4776bc; }
 
 .statistics-filters .statistics-export { display:flex; align-items:center; gap:6px; min-height:36px; padding:8px 12px; border:1px solid #e2e8f0; border-radius:7px; color:#64748b; background:#fff; font-size:12px; font-weight:500; box-shadow:none; white-space:nowrap; }
 .statistics-export span { font-size:16px; line-height:1; }
-.sidebar .nav-item[data-page="dataStatistics"] { display:flex; align-items:center; justify-content:center; text-align:center; }
+/* Sidebar labels share the same horizontal center, including nested accounts. */
+.sidebar .nav-item,.sidebar .collection-nav-add { display:flex; align-items:center; justify-content:center; gap:4px; text-align:center; }
+.sidebar .nav-item>span:not(.collection-nav-chevron) { flex:0 0 24px; text-align:center; }
+.sidebar #miaoshouCollectionToggle { padding-left:34px; padding-right:34px; }
+.sidebar .miaoshou-collection-children { margin-left:0; padding-left:8px; padding-right:8px; border-right:1px solid transparent; }
+.sidebar .brand { justify-content:center; padding-left:0; padding-right:0; }
+.sidebar .api-state { justify-content:center; }
+.sidebar .app-version { text-align:center; }
