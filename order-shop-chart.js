@@ -3,7 +3,7 @@
   const el = id => document.getElementById(id);
   const labels = {orders: '订单数', packages: '包裹数', quantity: '已知件数'};
   let accountId = null, visible = false, revision = 0, controller = null;
-  let data = null, catalog = [], selected = '', callbacks = {};
+  let data = null, catalog = [], selected = '', callbacks = {}, viewMode = 'bar';
   const day = offset => new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
   const number = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
   function clear(message) {
@@ -15,11 +15,20 @@
     el('orderShopToday').setAttribute('aria-pressed', String(start === day(0) && end === day(0)));
     el('orderShopWeek').setAttribute('aria-pressed', String(start === day(-6) && end === day(0)));
   }
+  function chartView(mode) {
+    viewMode = mode;
+    [['orderShopBarView','bar'],['orderShopPieView','pie']].forEach(([id,key])=>{
+      el(id).setAttribute('aria-pressed',String(mode===key));
+      el(id).className=`button ${mode===key?'primary':'subtle'}`;
+    });
+    el('orderShopPlot').setAttribute('aria-label',mode==='pie'?'各店铺数据占比饼状图':'各店铺数据柱状图，可横向滚动');
+    render();
+  }
   function render() {
     if (!data) return;
     const metric = Object.hasOwn(labels, el('orderShopMetric').value) ? el('orderShopMetric').value : 'orders';
     const label = labels[metric];
-    el('orderShopTitle').textContent = `${label} · 店铺对比`;
+    el('orderShopTitle').textContent = `${label} · ${viewMode === 'pie' ? '店铺占比' : '店铺对比'}`;
     el('orderShopCaption').textContent = `${data.accountName} · ${data.start} — ${data.end} · ${data.shops.length} 家已记录店铺`;
     el('orderShopSummary').replaceChildren(...Object.entries(labels).map(([key, text]) => {
       const item = document.createElement('span'), value = document.createElement('strong');
@@ -32,6 +41,17 @@
     if (!shops.length) {
       el('orderShopPlot').replaceChildren();
       el('orderShopHint').textContent = '该账号暂无已保存订单，请同步订单后查看店铺数据。';
+      return;
+    }
+    if (viewMode === 'pie') {
+      const colors=new Map([...shops].sort((a,b)=>a.shopKey.localeCompare(b.shopKey)).map((shop,index)=>[shop.shopKey,window.proportionCharts.colors[index%window.proportionCharts.colors.length]]));
+      const result=window.proportionCharts.render(el('orderShopPlot'),{
+        label,description:`${data.accountName}各店铺${label}占比`,selected,
+        entries:shops.map(shop=>({key:shop.shopKey,label:shop.displayName,value:number(shop[metric]),color:colors.get(shop.shopKey),shop,selectable:!!shop.shopKey})),
+        onDescribe:text=>{el('orderShopHint').textContent=text;},
+        onSelect:row=>{const shop=row.shop;if(visible&&accountId===shop.accountId&&shop.shopKey)callbacks.onSelect?.(shop);},
+      });
+      el('orderShopHint').textContent=result.total?'占比按当前账号和所选日期汇总 · 点击扇区或图例筛选下方订单明细。':'该日期范围内当前指标均为 0，暂无占比。';
       return;
     }
     const width = Math.max(640, el('orderShopPlot').clientWidth || 0, shops.length * 104 + 72), span = (width - 72) / shops.length;
@@ -99,6 +119,9 @@
   document.addEventListener('DOMContentLoaded', () => {
     el('orderShopStart').value = day(0); el('orderShopEnd').value = day(0); shortcuts();
     el('orderShopMetric').value = 'orders'; el('orderShopMetric').addEventListener('change', render);
+    chartView('bar');
+    el('orderShopBarView').addEventListener('click',()=>chartView('bar'));
+    el('orderShopPieView').addEventListener('click',()=>chartView('pie'));
     el('orderShopForm').addEventListener('submit', event => { event.preventDefault(); load(); });
     ['orderShopStart', 'orderShopEnd'].forEach(id => el(id).addEventListener('change', () => { revision += 1; controller?.abort(); clear('日期已修改，请查询店铺数据。'); shortcuts(); }));
     [['orderShopToday', 0], ['orderShopWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {

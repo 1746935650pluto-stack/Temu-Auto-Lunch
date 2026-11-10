@@ -7,7 +7,7 @@ const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
 function setup() {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
@@ -15,6 +15,7 @@ function setup() {
   const context = {document, window: {}, Date, URLSearchParams, AbortController, Blob, URL, setTimeout,
     openOrderAccount: id => opened.push(id), activeOrderAccountId: 2, activatePage: id => opened.push(id),
     fetch: (url, options) => new Promise(resolve => requests.push({url, options, resolve}))};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','proportion-chart.js'),'utf8'),context);
   vm.runInNewContext(source, context); events.DOMContentLoaded();
   return {...context, requests, opened, el: id => document.getElementById(id)};
 }
@@ -108,6 +109,36 @@ function accountResult(id,name,orders) {
   data.rows[0].accountId=id;data.rows[0].orders=orders;data.totals.orders=orders;
   return data;
 }
+
+test('account pie aggregates the selected date range per account and opens exact accounts without fetching',async()=>{
+  const s=setup(),data=result('Alpha'),base=data.rows[0];data.start='2026-11-08';data.end='2026-11-09';
+  data.accounts=[{id:1,name:'Alpha'},{id:2,name:'Beta'},{id:3,name:'Zero'}];
+  data.rows=[{...base,date:'2026-11-08',orders:6},{...base,orders:2},
+    {...base,accountId:2,accountName:'Beta',orders:2},{...base,accountId:3,accountName:'Zero',orders:0}];data.totals.orders=10;
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  await s.el('statisticsPieView').dispatch('click');assert.match(s.el('statisticsChartTitle').textContent,/账号占比/);
+  const rows=s.el('statisticsChartPlot').querySelectorAll('button');assert.equal(rows.length,3);
+  assert.match(rows[0].attrs['aria-label'],/Alpha.*8.*80.0%/);assert.match(rows[1].attrs['aria-label'],/Beta.*2.*20.0%/);assert.match(rows[2].attrs['aria-label'],/0.0%/);
+  await rows[1].dispatch('click');assert.deepEqual(s.opened,[2]);assert.equal(s.requests.length,1);
+});
+
+test('pie metrics and summary cards stay linked while switching accounts keeps pie view',async()=>{
+  const s=setup(),pending=s.window.dataStatistics.open(),data=accountResult(1,'NL',103);
+  data.rows[0].editFailed=2;data.rows[0].publishFailed=3;data.totals.editFailed=2;data.totals.publishFailed=3;
+  s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;await s.el('statisticsPieView').dispatch('click');
+  await s.el('statisticsCards').children[4].dispatch('click');assert.equal(s.el('statisticsPieView').attrs['aria-pressed'],'true');
+  assert.match(s.el('statisticsChartPlot').textContent,/100.0%/);assert.match(s.el('statisticsChartPlot').querySelectorAll('div').map(n=>n.attrs['aria-label']||'').join(' '),/异常 5/);
+  s.el('statisticsAccount').value='2';const next=s.el('statisticsAccount').dispatch('change');assert.equal(s.el('statisticsChartPlot').children.length,0);
+  s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await next;
+  assert.equal(s.el('statisticsPieView').attrs['aria-pressed'],'true');assert.doesNotMatch(s.el('statisticsChartPlot').textContent,/NL/);assert.equal(s.requests.length,2);
+});
+
+test('all-zero account pie remains explicit and table/bar toggles retain existing behavior',async()=>{
+  const s=setup(),data=result('Zero');data.rows[0].orders=0;const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  await s.el('statisticsPieView').dispatch('click');assert.match(s.el('statisticsChartPlot').textContent,/暂无占比/);assert.equal(s.el('statisticsChartPlot').querySelectorAll('g').length,0);
+  await s.el('statisticsTableView').dispatch('click');assert.equal(s.el('statisticsMetric').disabled,true);
+  await s.el('statisticsChartView').dispatch('click');assert.equal(s.el('statisticsMetric').disabled,false);assert.equal(s.el('statisticsChartPlot').children[0].tagName,'SVG');
+});
 
 test('changing account automatically refreshes cards, chart, rows and export using current dates', async()=>{
   const s=setup();s.el('statisticsStart').value='2026-11-04';s.el('statisticsEnd').value='2026-11-10';

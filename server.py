@@ -73,7 +73,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.200'
+APP_VERSION = '1.2.201'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -3458,7 +3458,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         # The same directory also contains .env and server.py. Only public
         # browser assets are served, so secrets cannot be fetched over HTTP.
-        if route.path in {"/", "/index.html", "/shipping-bindings.js", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
+        if route.path in {"/", "/index.html", "/proportion-chart.js", "/shipping-bindings.js", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
             super().do_GET()
             return
         self._error(HTTPStatus.NOT_FOUND, "未找到页面")

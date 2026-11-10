@@ -3,20 +3,24 @@
   const el = id => document.getElementById(id);
   const metrics = ['collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed', 'needsInput', 'orders', 'packages', 'quantity'];
   const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
-  let revision = 0, current = null, requestController = null;
+  let revision = 0, current = null, requestController = null, viewMode = 'bar';
   const metricLabels = {...Object.fromEntries(metrics.map((key, index) => [key, headings[index + 2]])), failed: '编辑／发布异常'};
   const colors = ['#2f6fed','#0c987f','#e69520','#8954ce','#d64c75','#1795b3','#98713e','#506ab0','#6d9c32','#bf6339', '#6c5bba','#d87926','#248963','#a94378','#377fb1','#8b8932','#aa5844','#525cc2','#227b82','#a168ba'];
-  function clearChart(message = '查询统计后显示柱状图。') {
+  function clearChart(message = '查询统计后显示图表。') {
     el('statisticsChartPlot').replaceChildren(); el('statisticsChartLegend').replaceChildren();
     el('statisticsChartHint').textContent = message;
   }
-  function chartView(table) {
+  function chartView(mode) {
+    viewMode = mode;
+    const table = mode === 'table';
     el('statisticsTable').hidden = !table;
     el('statisticsChartPanel').hidden = table;
     el('statisticsMetric').disabled = table;
+    el('statisticsChartLegend').hidden = mode === 'pie';
+    el('statisticsChartPlot').setAttribute('aria-label', mode === 'pie' ? '各账号数据占比饼状图' : '每日柱状图，可横向滚动');
     if (!table && current) renderChart();
     if (table) el('statisticsChartTitle').textContent = '每日账号明细';
-    [['statisticsChartView', !table], ['statisticsTableView', table]].forEach(([id, selected]) => {
+    [['statisticsChartView', mode === 'bar'], ['statisticsPieView', mode === 'pie'], ['statisticsTableView', table]].forEach(([id, selected]) => {
       el(id).className = `button ${selected ? 'primary' : 'subtle'}`;
       el(id).setAttribute('aria-pressed', String(selected));
     });
@@ -28,14 +32,27 @@
       card.classList.toggle('statistics-kpi-primary', selected);
       card.setAttribute('aria-pressed', String(selected));
     });
-    el('statisticsChartTitle').textContent = el('statisticsTable').hidden ? `${label}趋势` : '每日账号明细';
-    if (!current?.rows.length) { clearChart('当前筛选没有可展示的每日数据。'); return; }
+    el('statisticsChartTitle').textContent = viewMode === 'pie' ? `${label} · 账号占比` : el('statisticsTable').hidden ? `${label}趋势` : '每日账号明细';
+    if (!current?.rows.length) { if(current)el('statisticsChartCaption').textContent=`${current.start} — ${current.end} · 0 个账号`;clearChart('当前筛选没有可展示的每日数据。'); return; }
     const dates = [...new Set(current.rows.map(row => row.date))].sort();
     const accounts = [...new Map(current.rows.map(row => [row.accountId, {id: row.accountId, name: row.accountName}])).values()].sort((a, b) => a.id - b.id);
     const singleDay = dates.length === 1;
     if (el('statisticsTable').hidden && singleDay) el('statisticsChartTitle').textContent = `${label}对比`;
     el('statisticsChartCaption').textContent = `${current.start} — ${current.end} · ${accounts.length} 个账号`;
     const values = new Map(current.rows.map(row => { const value = metric === 'failed' ? Number(row.editFailed || 0) + Number(row.publishFailed || 0) : Number(row[metric]); return [`${row.date}:${row.accountId}`, Number.isFinite(value) ? Math.max(0, value) : 0]; }));
+    if (viewMode === 'pie') {
+      el('statisticsChartTitle').textContent = `${label} · 账号占比`;
+      el('statisticsChartLegend').replaceChildren();
+      const result = window.proportionCharts.render(el('statisticsChartPlot'), {
+        label, description: `${current.start} 至 ${current.end}各账号${label}占比`,
+        entries: accounts.map(account => ({key:String(account.id),label:account.name,
+          color:colors[(account.id-1)%colors.length],value:dates.reduce((sum,date)=>sum+(values.get(`${date}:${account.id}`)||0),0)})),
+        onDescribe: text => { el('statisticsChartHint').textContent = text; },
+        onSelect: metric === 'orders' ? row => openOrderAccount(Number(row.key)) : undefined,
+      });
+      el('statisticsChartHint').textContent = result.total ? '按所选日期范围汇总各账号占比 · 悬停查看数量和百分比' + (metric === 'orders' ? ' · 点击扇区或图例查看账号订单' : '') : '当前筛选下该指标均为 0，暂无占比。';
+      return;
+    }
     const maximum = Math.max(0, ...values.values());
     const power = 10 ** Math.floor(Math.log10(Math.max(1, maximum / 4)));
     const step = Math.max(1, [1, 2, 5, 10].find(n => n * power >= maximum / 4) * power);
@@ -128,8 +145,8 @@
     el('statisticsCards').replaceChildren(...cards.map(([key, label, value, note]) => {
       const card = document.createElement('button'), title = document.createElement('span'), number = document.createElement('strong'), detail = document.createElement('small');
       card.type = 'button'; card.className = 'statistics-kpi'; card.dataset.metric = key;
-      card.title = `查看${label}柱状图`;
-      card.addEventListener('click', () => { el('statisticsMetric').value = key; chartView(false); });
+      card.title = `查看${label}统计图`;
+      card.addEventListener('click', () => { el('statisticsMetric').value = key; chartView(viewMode === 'pie' ? 'pie' : 'bar'); });
       title.textContent = label; number.textContent = Number(value || 0).toLocaleString('zh-CN'); detail.textContent = note; card.append(title, number, detail); return card;
     }));
     el('statisticsRows').replaceChildren(...data.rows.map(row => {
@@ -193,10 +210,11 @@
   }
   document.addEventListener('DOMContentLoaded', () => {
     el('statisticsMetric').value = 'orders';
-    chartView(false);
+    chartView('bar');
     el('statisticsMetric').addEventListener('change', renderChart);
-    el('statisticsChartView').addEventListener('click', () => chartView(false));
-    el('statisticsTableView').addEventListener('click', () => chartView(true));
+    el('statisticsChartView').addEventListener('click', () => chartView('bar'));
+    el('statisticsPieView').addEventListener('click', () => chartView('pie'));
+    el('statisticsTableView').addEventListener('click', () => chartView('table'));
     el('statisticsStart').value = beijingDate(-6); el('statisticsEnd').value = beijingDate();
     dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
