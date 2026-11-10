@@ -18,7 +18,7 @@ RELEASE_FILES = (
     'account_slots.py', 'attribute_ai.py', 'attribute_defaults.py', 'automatic_tasks.py', 'automation_pool.py',
     'automation_read_cache.py', 'automation_watchdog.py', 'collection_cache.py',
     'collection_people.py', 'deepseek_profiles.py', 'deepseek_efficiency.py', 'edit_scheduler.py', 'hourly_sync.py', 'item_editor.py',
-    'daily_statistics.py', 'data-statistics.js', 'event_archive.py', 'maintenance_service.py', 'performance_metrics.py',
+    'daily_statistics.py', 'data-statistics.js', 'order_statistics.py', 'order-shop-chart.js', 'navigation-state.js', 'event_archive.py', 'maintenance_service.py', 'performance_metrics.py',
     'zhihou.py', 'zhihou.js', 'order_sync.py', 'partitioned_pool.py', 'personnel_routing.py', 'shared_automation.py', 'task_queries.py',
     'index.html', 'styles.css', 'app.js', 'account-context.js', 'virtual-list.js', 'diagnostics-panel.js', 'shared-automation.js',
     'local-view-cache.js', 'live-status.js', 'desktop-ui.js', 'pricing-workbench.js',

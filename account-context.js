@@ -8,15 +8,20 @@
   window.collectionAccountContext = {
     id,
     switchTo(nextId, params = {}) {
-      if (pendingWrites) { window.alert('当前操作仍在提交，请完成后再切换采集箱。'); return; }
+      if (pendingWrites) { window.alert('当前操作仍在提交，请完成后再切换采集箱。'); return false; }
       const editor = document.querySelector('#liveEditor');
       if (editor && !editor.classList.contains('hidden') &&
-          !window.confirm('切换采集箱会关闭当前编辑器并丢弃未保存内容，是否继续？')) return;
+          !window.confirm('切换采集箱会关闭当前编辑器并丢弃未保存内容，是否继续？')) return false;
       const url = new URL(window.location.href);
       url.searchParams.set('collectionAccount', String(nextId));
+      if (url.searchParams.has('page')) url.searchParams.set('page', 'workbench');
+      url.searchParams.delete('orderAccount');
       url.searchParams.delete('sharedEditJob');
       if (params.sharedEditJob) url.searchParams.set('sharedEditJob', params.sharedEditJob);
+      if (params.page) url.searchParams.set('page', params.page);
+      if (params.page === 'orders') url.searchParams.set('orderAccount', String(params.orderAccountId));
       window.location.assign(url.href);
+      return true;
     },
   };
   window.fetch = async (input, options = {}) => {

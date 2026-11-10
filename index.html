@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.197" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.198" />
   </head>
   <body>
     <div class="app-shell">
@@ -19,26 +19,21 @@
         </div>
         <nav class="nav" aria-label="主导航">
           <div class="miaoshou-collection-nav" id="miaoshouCollectionNav">
-            <button type="button" class="nav-item active" id="miaoshouCollectionToggle" aria-expanded="false" aria-controls="miaoshouCollectionChildren"><span>⌘</span>妙手采集箱<span class="collection-nav-chevron" aria-hidden="true">›</span></button>
-            <div class="miaoshou-collection-children" id="miaoshouCollectionChildren" role="group" aria-label="妙手采集箱账号" hidden>
-              <button type="button" class="nav-item active" data-page="workbench" data-account-id="1"><span>1</span>妙手采集箱 1</button>
-              <button type="button" class="nav-item" data-page="collectionAccount" data-account-id="2"><span>2</span>妙手采集箱 2</button>
-              <button type="button" class="collection-nav-add" id="addEmptyCollection">＋ 新增空采集箱</button>
-            </div>
+            <button type="button" class="nav-item active" id="miaoshouCollectionToggle"><span>⌘</span>采集箱</button>
           </div>
-          <button class="nav-item" data-page="dataStatistics"><span>▥</span>数据统计</button>
           <button class="nav-item" data-page="zhihou"><span>ZH</span>智猴物流</button>
           <button class="nav-item" data-page="pricing"><span>¥</span>自动核价</button>
           <button class="nav-item" data-page="collectionAutomation"><span>⇣</span>自动化采集</button>
           <button class="nav-item" data-page="automation"><span>⚡</span>自动化池</button>
           <button class="nav-item" data-page="automaticTasks"><span>▶</span>自动任务</button>
           <button class="nav-item" data-page="tasks"><span>◷</span>任务中心 <b id="taskBadge" class="hidden" title="已提交的自动化任务数">0</b></button>
+          <button class="nav-item" data-page="dataStatistics"><span>▥</span>数据统计</button>
           <button class="nav-item" data-page="publishRecords"><span>◫</span>发布记录</button>
           <button class="nav-item" data-page="settings"><span>⚙</span>接口设置</button>
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.197">当前版本 V1.2.197</span>
+          <span class="app-version" data-resource-version="1.2.198">当前版本 V1.2.198</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -53,7 +48,14 @@
         </header>
 
         <div class="collection-context-bar">
-          <strong id="currentCollectionAccount">当前账号：妙手采集箱 1</strong>
+          <div class="collection-account-switcher" id="collectionAccountSwitcher">
+            <button type="button" class="collection-account-switch" id="collectionAccountSwitchToggle" aria-expanded="false" aria-controls="miaoshouCollectionChildren"><strong id="currentCollectionAccount">当前账号：妙手采集箱 1</strong><span aria-hidden="true">⌄</span></button>
+            <div class="miaoshou-collection-children collection-account-menu" id="miaoshouCollectionChildren" role="group" aria-label="切换采集箱账号" hidden>
+              <button type="button" class="nav-item active" data-page="workbench" data-account-id="1"><span class="collection-nav-number">1</span><span class="collection-nav-name">妙手采集箱 1</span></button>
+              <button type="button" class="nav-item" data-page="collectionAccount" data-account-id="2"><span class="collection-nav-number">2</span><span class="collection-nav-name">妙手采集箱 2</span></button>
+              <button type="button" class="collection-nav-add" id="addEmptyCollection">＋ 新增空采集箱</button>
+            </div>
+          </div>
           <button type="button" class="button subtle" id="syncCollectionInfo">手动同步信息</button>
           <button type="button" class="button primary" id="syncCollectionPool" disabled>全箱一键同步到自动化池</button>
           <button type="button" class="button subtle" id="openCollectionOrders">查看对应订单中心</button>
@@ -477,6 +479,17 @@
           <div class="publish-records-page">
             <div class="publish-records-head"><div><p class="eyebrow">MIAOSHOU / READ-ONLY ORDER SYNC</p><h1 id="orderCenterTitle">订单中心 / 妙手采集箱 1</h1><p id="orderAccountDescription">对应妙手采集箱 1；只读取并保存该账号的订单，不修改或回写妙手。</p></div><button class="button primary" id="syncOrders">同步订单记录</button></div>
             <div class="order-sync-summary"><span id="orderSyncCount">本地订单 0 条</span><span id="orderLastSynced">尚未同步</span><span id="orderAutoSyncSchedule">自动同步：正在读取</span><span class="status-pill neutral" id="orderSyncStatus">正在检查接口</span><label class="order-shop-filter">店铺<select id="orderShopFilter"><option value="">全部店铺</option></select></label></div>
+            <section class="statistics-data-panel order-shop-panel" aria-labelledby="orderShopTitle">
+              <div class="statistics-chart-tools"><div class="statistics-chart-heading"><h2 id="orderShopTitle">订单数 · 店铺对比</h2><p id="orderShopCaption">当前账号的店铺数据</p></div><label class="order-shop-metric">统计指标<select id="orderShopMetric"><option value="orders">订单数</option><option value="packages">包裹数</option><option value="quantity">已知件数</option></select></label></div>
+              <form class="order-shop-filters" id="orderShopForm">
+                <label>开始日期<input type="date" id="orderShopStart" required /></label><span class="order-shop-separator" aria-hidden="true">—</span><label>结束日期<input type="date" id="orderShopEnd" required /></label>
+                <button class="button subtle" type="button" id="orderShopToday">今天</button><button class="button subtle" type="button" id="orderShopWeek">近 7 天</button><button class="button primary" type="submit">查询店铺</button>
+                <div class="order-shop-summary" id="orderShopSummary"></div>
+              </form>
+              <p id="orderShopStatus" class="order-shop-status" role="status" aria-live="polite">选择日期后查看各店铺数据。</p>
+              <div class="statistics-plot-scroll order-shop-plot" id="orderShopPlot" tabindex="0" aria-label="各店铺数据柱状图，可横向滚动"></div>
+              <div class="order-shop-footer"><span>图表按已保存订单历史统计，下方展示最近同步明细。</span><p id="orderShopHint" role="status" aria-live="polite"></p></div>
+            </section>
             <div id="ordersList" class="order-record-list"><p class="live-empty">正在读取本地订单记录…</p></div>
           </div>
         </section>
@@ -727,19 +740,21 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./data-statistics.js?v=1.2.197"></script>
-    <script src="./account-context.js?v=1.2.197"></script>
-  <script src="./local-view-cache.js?v=1.2.197"></script>
-  <script src="./live-status.js?v=1.2.197"></script>
+    <script src="./data-statistics.js?v=1.2.198"></script>
+    <script src="./order-shop-chart.js?v=1.2.198"></script>
+    <script src="./navigation-state.js?v=1.2.198"></script>
+    <script src="./account-context.js?v=1.2.198"></script>
+  <script src="./local-view-cache.js?v=1.2.198"></script>
+  <script src="./live-status.js?v=1.2.198"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.197"></script>
-  <script src="./shared-automation.js?v=1.2.197"></script>
-  <script src="./pricing-workbench.js?v=1.2.197"></script>
-  <script src="./app.js?v=1.2.197"></script>
+  <script src="./diagnostics-panel.js?v=1.2.198"></script>
+  <script src="./shared-automation.js?v=1.2.198"></script>
+  <script src="./pricing-workbench.js?v=1.2.198"></script>
+  <script src="./app.js?v=1.2.198"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
     <script src="./automatic-tasks.js?v=1.2.173"></script>
-    <script src="./desktop-ui.js?v=1.2.197"></script>
-    <script src="./live-editor.js?v=1.2.197"></script>
+    <script src="./desktop-ui.js?v=1.2.198"></script>
+    <script src="./live-editor.js?v=1.2.198"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

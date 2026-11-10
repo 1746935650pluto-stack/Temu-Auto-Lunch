@@ -877,3 +877,42 @@ details.shared-queue-activity > summary::marker { color: #4776bc; }
 .sidebar .brand { justify-content:center; padding-left:0; padding-right:0; }
 .sidebar .api-state { justify-content:center; }
 .sidebar .app-version { text-align:center; }
+
+.order-shop-panel { margin:0 0 20px; }
+.order-shop-metric select { min-width:118px; }
+.order-shop-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:9px; padding:12px 18px 4px; }
+.order-shop-filters label { display:grid; gap:5px; font-size:11px; color:#94a3b8; }
+.order-shop-filters input { width:140px; min-height:33px; margin:0; padding:6px 8px; border:1px solid #e2e8f0; border-radius:7px; background:#fbfcfe; color:#475569; font-size:12px; }
+.order-shop-separator { padding-bottom:9px; color:#c1cad8; }
+.order-shop-filters .button { min-height:33px; padding:7px 10px; border-radius:7px; font-size:11px; font-weight:500; box-shadow:none; white-space:nowrap; }
+.order-shop-filters .button.subtle { border:1px solid transparent; color:#64748b; background:transparent; }
+.order-shop-filters .button[aria-pressed="true"] { color:#2563eb; background:#eff5ff; border-color:#e0eaff; }
+.order-shop-summary { display:flex; gap:15px; margin-left:auto; padding-bottom:8px; color:#94a3b8; font-size:11px; }
+.order-shop-summary strong { color:#475569; font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
+.order-shop-status { margin:7px 20px 0; color:#94a3b8; font-size:10px; line-height:1.6; }
+.order-shop-plot { margin:0 16px; }
+.order-shop-plot:empty { min-height:150px; }
+.order-shop-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:10px 18px; border-top:1px solid #f0f3f8; color:#94a3b8; font-size:10px; line-height:1.6; }
+.order-shop-footer p { margin:0; }
+@media(max-width:900px) { .order-shop-summary { flex-basis:100%; margin-left:0; padding:4px 0 0; } }
+@media(max-width:600px) { .order-shop-filters { gap:7px; padding:12px 12px 4px; }.order-shop-filters input { width:128px; }.order-shop-plot { margin:0 6px; }.order-shop-summary { gap:12px; }.order-shop-footer { padding:10px 12px; } }
+
+.sidebar .nav-item[data-page="tasks"] { flex-wrap:wrap; }
+.sidebar .nav-item b { position:static; flex:0 0 auto; margin-left:4px; }
+/* Give every account the same number/name columns while centering the group. */
+.sidebar #miaoshouCollectionChildren .nav-item { display:grid; grid-template-columns:24px minmax(0,126px); column-gap:8px; justify-content:center; text-align:left; }
+.sidebar #miaoshouCollectionChildren .collection-nav-number { width:24px; font-variant-numeric:tabular-nums; text-align:center; }
+.sidebar #miaoshouCollectionChildren .collection-nav-name { width:auto; min-width:0; color:inherit; font-size:inherit; text-align:left; overflow-wrap:anywhere; }
+.sidebar #miaoshouCollectionToggle { padding-left:13px; padding-right:13px; }
+.collection-account-switcher { position:relative; max-width:100%; }
+.collection-account-switch { display:flex; align-items:center; gap:14px; max-width:100%; padding:9px 12px; border:1px solid #dce6f5; border-radius:8px; background:#f7faff; color:#243653; }
+.collection-account-switch strong { overflow-wrap:anywhere; text-align:left; }
+.collection-account-switch>span { color:#6b8ec7; }
+.collection-account-menu { position:absolute; z-index:1000; top:calc(100% + 8px); left:0; width:300px; max-width:calc(100vw - 56px); max-height:min(520px,calc(100vh - 110px)); overflow:auto; display:grid; gap:4px; margin:0; padding:8px; border:1px solid #dce6f5; border-radius:12px; background:#fff; box-shadow:0 12px 36px #1e36552b; }
+.collection-account-menu .nav-item { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:10px; padding:10px 12px; text-align:left; color:#46556e; }
+.collection-account-menu .nav-item:hover { background:#f3f7ff; color:#2563eb; }
+.collection-account-menu .nav-item.active { background:#eaf1ff; color:#2563eb; }
+.collection-account-menu .collection-nav-number { width:24px; text-align:center; color:#6b8ec7; font-variant-numeric:tabular-nums; }
+.collection-account-menu .collection-nav-name { width:auto; min-width:0; color:inherit; font-size:inherit; overflow-wrap:anywhere; }
+.collection-account-menu .collection-nav-add { margin-top:6px; color:#2563eb; border-color:#b9cdf3; text-align:center; }
+.collection-account-menu .collection-nav-add:hover { color:#1d4ed8; background:#f3f7ff; }

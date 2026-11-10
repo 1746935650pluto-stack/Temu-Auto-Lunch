@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Microsoft.Web.WebView2.Core.dll",
+    "bytes": 703328,
+    "sha256": "ACDD517B951829F763D1255F32DF1E6A936CB8623A7EBFF6B8B24172DEDE6BD6"
+  },
+  {
+    "name": "Microsoft.Web.WebView2.WinForms.dll",
+    "bytes": 38792,
+    "sha256": "C66437F80886AECF074804B61AF4CC10AD90A95310C8E0A717F31EA377C26B03"
+  },
+  {
+    "name": "TemuWorkbench.exe",
+    "bytes": 64512,
+    "sha256": "8F9BFF7BB6C174B88EBBD518AE3D3B3080D79285696944BA0D7BA627DEDBFAAB"
+  },
+  {
+    "name": "TemuWorkbench.exe.config",
+    "bytes": 329,
+    "sha256": "2EA4C99E3C0A2F7FA50D84DD67D47EE165FC3243A0E526B83724D9B29106442A"
+  },
+  {
+    "name": "TemuWorkbench.ico",
+    "bytes": 20476,
+    "sha256": "3E5E250741E5726A47054E90911C851C4933309D320EC55F57411D60063BF78E"
+  },
+  {
+    "name": "WebView2-LICENSE.txt",
+    "bytes": 1487,
+    "sha256": "0AF8F1B807512AAE39C2AC1AA4D0CAE65CABECB6FD554B8439A5162A0D6ECA55"
+  },
+  {
+    "name": "WebView2Loader.dll",
+    "bytes": 194912,
+    "sha256": "D3FCE90BDEECB08596E377DEA6A316354DD8949E32FF09B89D51BE00C14E21B6"
+  }
+]

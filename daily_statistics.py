@@ -9,24 +9,10 @@ from threading import Lock
 import time
 
 from event_archive import archive_path
+from order_statistics import BEIJING, local_day, read_orders, group_orders, package_quantities, build_shop_report
 
-BEIJING = timezone(timedelta(hours=8))
 COUNTERS = ('collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed',
             'needsInput', 'orders', 'packages', 'quantity', 'quantityMissing', 'amountMissing')
-
-
-def local_day(value):
-    """Vendor dates without an offset are Beijing time, never machine time."""
-    try:
-        raw = str(value).strip()
-        if raw.replace('.', '', 1).isdigit():
-            stamp = float(raw)
-            parsed = datetime.fromtimestamp(stamp / 1000 if stamp > 1e11 else stamp, timezone.utc)
-        else:
-            parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
-        return parsed.replace(tzinfo=BEIJING).date().isoformat() if parsed.tzinfo is None else parsed.astimezone(BEIJING).date().isoformat()
-    except (ValueError, TypeError, OverflowError, OSError):
-        return None
 
 
 def parameters(query, accounts):
@@ -116,15 +102,10 @@ def build_report(accounts, pool_path, order_path, query):
         path = Path(order_path) if aid == 1 else Path(order_path).with_name(f'order_sync.account-{aid}.sqlite3')
         if not path.is_file():
             continue
-        with closing(reader(path)) as connection:
-            tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            table = 'order_statistics_history' if 'order_statistics_history' in tables else 'synced_orders'
-            orders = connection.execute(f'SELECT record_key, order_no, shop_id, status, amount, currency, ordered_at, item_details, synced_at FROM {table} ORDER BY synced_at, record_key').fetchall()
-        grouped = {}
+        orders = read_orders(path)
+        grouped = group_orders(orders)
         for order in orders:
             last_synced[aid] = max(last_synced.get(aid, ''), order['synced_at'])
-            key = (order['shop_id'], order['order_no'] or 'package:' + order['record_key'])
-            grouped.setdefault(key, []).append(order)
         for packages in grouped.values():
             order = packages[-1]
             day = local_day(order['ordered_at'])
@@ -136,16 +117,9 @@ def build_report(accounts, pool_path, order_path, query):
                 continue
             target['orders'] += 1
             target['packages'] += len(packages)
-            # Quantity is only counted when every item in the package has a known quantity.
-            for package in packages:
-                items = json.loads(package['item_details'] or '[]')
-                if not isinstance(items, list):
-                    items = []
-                quantities = [item.get('quantity') for item in items if isinstance(item, dict)]
-                if items and len(quantities) == len(items) and all(type(q) is int and q >= 0 for q in quantities):
-                    target['quantity'] += sum(quantities)
-                else:
-                    target['quantityMissing'] += 1
+            quantity, missing = package_quantities(packages)
+            target['quantity'] += quantity
+            target['quantityMissing'] += missing
             try:
                 amount = Decimal(order['amount'])
                 currency = order['currency'].strip().upper()
@@ -192,3 +166,10 @@ class DailyStatistics:
                 self.cache.clear()
             self.cache[key] = (time.monotonic(), result)
             return result
+
+
+def shop_report(accounts, order_path, query):
+    start, end, selected = parameters(query, accounts)
+    if query.get('accountId', ['all'])[0] == 'all' or len(selected) != 1:
+        raise ValueError('请选择单个妙手账号查看店铺数据')
+    return build_shop_report(selected[0], order_path, start, end)

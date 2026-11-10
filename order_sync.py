@@ -184,21 +184,33 @@ class OrderSyncStore:
                 connection.execute("""CREATE TABLE order_statistics_history (
                     record_key TEXT PRIMARY KEY, order_no TEXT NOT NULL, shop_id TEXT NOT NULL,
                     status TEXT NOT NULL, amount TEXT NOT NULL, currency TEXT NOT NULL,
-                    ordered_at TEXT NOT NULL, item_details TEXT NOT NULL, synced_at TEXT NOT NULL)""")
+                    ordered_at TEXT NOT NULL, item_details TEXT NOT NULL, synced_at TEXT NOT NULL,
+                    shop_name TEXT NOT NULL DEFAULT '')""")
                 self._retain_statistics(connection)
+            history_columns = {row['name'] for row in connection.execute('PRAGMA table_info(order_statistics_history)')}
+            if 'shop_name' not in history_columns:
+                connection.execute("ALTER TABLE order_statistics_history ADD COLUMN shop_name TEXT NOT NULL DEFAULT ''")
+                connection.execute("""UPDATE order_statistics_history SET shop_name=(
+                    SELECT o.shop_name FROM synced_orders o WHERE o.record_key=order_statistics_history.record_key
+                    AND o.shop_id=order_statistics_history.shop_id)
+                    WHERE shop_name='' AND EXISTS (SELECT 1 FROM synced_orders o
+                    WHERE o.record_key=order_statistics_history.record_key
+                    AND o.shop_id=order_statistics_history.shop_id AND o.shop_name!='')""")
 
     @staticmethod
     def _retain_statistics(connection):
         # Retain safe order metadata before the current snapshot can be replaced.
         connection.execute("""INSERT INTO order_statistics_history
-            SELECT record_key,order_no,shop_id,status,amount,currency,ordered_at,item_details,synced_at
+            (record_key,order_no,shop_id,status,amount,currency,ordered_at,item_details,synced_at,shop_name)
+            SELECT record_key,order_no,shop_id,status,amount,currency,ordered_at,item_details,synced_at,shop_name
             FROM synced_orders WHERE 1
             ON CONFLICT(record_key) DO UPDATE SET
             order_no=excluded.order_no,shop_id=excluded.shop_id,status=excluded.status,
             amount=CASE WHEN excluded.amount='' THEN order_statistics_history.amount ELSE excluded.amount END,
             currency=CASE WHEN excluded.currency='' THEN order_statistics_history.currency ELSE excluded.currency END,
             ordered_at=CASE WHEN excluded.ordered_at='' THEN order_statistics_history.ordered_at ELSE excluded.ordered_at END,
-            item_details=excluded.item_details,synced_at=excluded.synced_at""")
+            item_details=excluded.item_details,synced_at=excluded.synced_at,
+            shop_name=CASE WHEN excluded.shop_name='' THEN order_statistics_history.shop_name ELSE excluded.shop_name END""")
 
     def upsert(self, rows: list[dict[str, Any]]) -> int:
         normalized: list[dict[str, str]] = []

@@ -1,12 +1,9 @@
 (() => {
   'use strict';
-  const pages=new Set(['workbench','automation','tasks','settings','pricing','zhihou','orders','dataStatistics']);
   document.addEventListener('DOMContentLoaded',()=>{
     async function cacheStatus(){const status=document.getElementById('localDisplayCacheStatus'),stats=await window.LocalViewCache?.stats();if(status)status.textContent=stats?`当前显示缓存：${stats.views} 页 · ${(stats.bytes/1024/1024).toFixed(2)} MB。清理仅影响显示缓存，商品、任务和 API 配置保留。`:'当前环境未启用显示缓存，实时列表可正常使用。';}
     document.getElementById('clearLocalDisplayCache')?.addEventListener('click',async()=>{await window.LocalViewCache?.clear();await cacheStatus();});
     void cacheStatus();
-    const page=new URLSearchParams(location.search).get('page');
-    if(pages.has(page))document.querySelector(`.nav-item[data-page="${page}"]`)?.click();
     if(!window.temuDesktop)return;
     document.body.classList.add('desktop-client');
     const fallback=document.getElementById('pricingWorkbenchFallback');

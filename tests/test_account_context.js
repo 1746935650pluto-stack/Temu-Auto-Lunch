@@ -37,6 +37,21 @@ test('shared target editor navigation carries the explicit job and drops old nav
   assert.equal(navigations[0], 'http://127.0.0.1:8787/?collectionAccount=1&sharedEditJob=new-target-job');
 });
 
+test('collection account switches leave the previous module and order account route', () => {
+  const {window,navigations}=setup('?collectionAccount=1&page=orders&orderAccount=4');
+  window.collectionAccountContext.switchTo(2);
+  const url=new URL(navigations[0]);assert.equal(url.searchParams.get('collectionAccount'),'2');
+  assert.equal(url.searchParams.get('page'),'workbench');assert.equal(url.searchParams.has('orderAccount'),false);
+});
+
+test('desktop tab account switches preserve their explicit module and order account',()=>{
+  const {window,navigations}=setup('?collectionAccount=2&page=workbench&sharedEditJob=old');
+  assert.equal(window.collectionAccountContext.switchTo(4,{page:'orders',orderAccountId:7}),true);
+  const url=new URL(navigations[0]);assert.equal(url.searchParams.get('collectionAccount'),'4');
+  assert.equal(url.searchParams.get('page'),'orders');assert.equal(url.searchParams.get('orderAccount'),'7');
+  assert.equal(url.searchParams.has('sharedEditJob'),false);
+});
+
 test('global performance reads never inherit the selected collection header', async () => {
   for (const selected of [1,2,7]) {
     const {window,requests}=setup('?collectionAccount='+selected);

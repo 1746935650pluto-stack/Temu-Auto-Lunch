@@ -167,6 +167,7 @@ function navigateLiveFlow(stage) {
   scrollToLiveStep(stage === 6 ? 'liveValidationStep' : 'livePublishStep');
 }
 function activatePage(pageId) {
+  window.workbenchNavigation?.record(pageId, activeOrderAccountId);
   if (pageId !== 'collectionAccount') clearCollectionCredentialInputs();
   if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); }
   else clearDeepSeekInput();
@@ -195,7 +196,8 @@ function activatePage(pageId) {
   });
   $$('.page').forEach((page) => page.classList.toggle('active', page.id === displayPage));
   if (pageId === 'publishRecords' && liveState.mode !== 'demo') loadLiveRecords();
-  if (pageId === 'orders') loadOrders();
+  if (pageId === 'orders') { loadOrders(); window.orderShopCharts?.open(activeOrderAccountId, orderAccountName(accountById(activeOrderAccountId))); }
+  else window.orderShopCharts?.close();
   if (pageId === 'dataStatistics') window.dataStatistics?.open();
   if (pageId === 'zhihou') window.zhiHouModule?.refresh();
   if (pageId === 'pricing') window.pricingWorkbench?.open();
@@ -230,7 +232,7 @@ function openMiaoshouCollectionAccount(accountId) {
   activeMiaoshouCollectionAccountId = Number(account.id);
   updateCurrentCollectionAccountName();
   if (accountChanged) resetLiveCollectorAccount(activeMiaoshouCollectionAccountId);
-  setMiaoshouCollectionExpanded(true);
+  setMiaoshouCollectionExpanded(false);
   if (activeMiaoshouCollectionAccountId === 1 || account.configured) {
     activatePage('workbench');
     updateCurrentCollectionAccountName();
@@ -262,14 +264,14 @@ function setMiaoshouCollectionExpanded(expanded) {
   miaoshouCollectionExpanded = Boolean(expanded);
   const children = $('#miaoshouCollectionChildren');
   if (children) children.hidden = !miaoshouCollectionExpanded;
-  const parent = $('#miaoshouCollectionToggle');
+  const parent = $('#collectionAccountSwitchToggle');
   if (parent) parent.setAttribute('aria-expanded', String(miaoshouCollectionExpanded));
 }
 function bindCollectionAccountNavigation(button) {
   button.addEventListener('click', () => openMiaoshouCollectionAccount(Number(button.dataset.accountId)));
 }
 function bindCollectionFolderNavigation(button) {
-  button.addEventListener('click', () => setMiaoshouCollectionExpanded(!miaoshouCollectionExpanded));
+  button.addEventListener('click', () => openMiaoshouCollectionAccount(activeMiaoshouCollectionAccountId));
 }
 function updateCollectionAccountControls() {
   const add = $('#addEmptyCollection');
@@ -366,24 +368,9 @@ async function mutateEmptyCollection(accountId = null) {
   finally { collectionAccountMutationPending = false; collectionAccountRevision += 1; updateCollectionAccountControls(); }
 }
 function renderMiaoshouCollectionAccounts(accounts) {
-  const container = $('#miaoshouCollectionNav');
-  if (!container || !Array.isArray(accounts) || !accounts.length) return;
-  container.replaceChildren();
-  const parent = document.createElement('button');
-  parent.id = 'miaoshouCollectionToggle'; parent.type = 'button'; parent.className = 'nav-item';
-  parent.setAttribute('aria-controls', 'miaoshouCollectionChildren');
-  const folderIcon = document.createElement('span'); folderIcon.textContent = '⌘';
-  const arrow = document.createElement('span');
-  arrow.className = 'collection-nav-chevron'; arrow.textContent = '›';
-  arrow.setAttribute('aria-hidden', 'true');
-  parent.append(folderIcon, document.createTextNode('妙手采集箱'), arrow);
-  bindCollectionFolderNavigation(parent);
-  container.append(parent);
-  const children = document.createElement('div');
-  children.id = 'miaoshouCollectionChildren';
-  children.className = 'miaoshou-collection-children';
-  children.setAttribute('role', 'group');
-  children.setAttribute('aria-label', '妙手采集箱账号');
+  const children = $('#miaoshouCollectionChildren');
+  if (!children || !Array.isArray(accounts) || !accounts.length) return;
+  children.replaceChildren();
   let displayNumber = 0;
   accounts.forEach((account) => {
     const id = Number(account.id);
@@ -393,8 +380,10 @@ function renderMiaoshouCollectionAccounts(accounts) {
     button.dataset.page = id === 1 || account.configured ? 'workbench' : 'collectionAccount';
     button.dataset.accountId = String(id);
     const icon = document.createElement('span'); icon.textContent = String(++displayNumber);
+    icon.className = 'collection-nav-number';
     const name = id === 1 && account.name === '妙手采集箱' ? '妙手采集箱 1' : account.name || `妙手采集箱 ${id}`;
-    button.append(icon, document.createTextNode(name));
+    const label = document.createElement('span'); label.className = 'collection-nav-name'; label.textContent = name;
+    button.append(icon, label);
     if (id > 1 && !account.configured) button.title = '独立妙手 API 尚未接入';
     bindCollectionAccountNavigation(button);
     children.append(button);
@@ -404,7 +393,6 @@ function renderMiaoshouCollectionAccounts(accounts) {
   add.textContent = '＋ 新增空采集箱'; add.disabled = collectionAccountMutationPending;
   add.addEventListener('click', () => mutateEmptyCollection());
   children.append(add);
-  container.append(children);
   setMiaoshouCollectionExpanded(miaoshouCollectionExpanded);
   const selectedPage = activeMiaoshouCollectionAccountId === 1 || accountById(activeMiaoshouCollectionAccountId)?.configured ? 'workbench' : 'collectionAccount';
   const currentPage = $$('.page').find((page) => page.classList.contains('active'))?.id;
@@ -433,9 +421,10 @@ async function loadMiaoshouCollectionAccounts() {
     }
     if (window.collectionAccountContext && !loadMiaoshouCollectionAccounts.initialized) {
       loadMiaoshouCollectionAccounts.initialized = true;
-      openMiaoshouCollectionAccount(activeMiaoshouCollectionAccountId);
+      if (!window.workbenchNavigation?.ready()) openMiaoshouCollectionAccount(activeMiaoshouCollectionAccountId);
     }
   } catch (_) {
+    window.workbenchNavigation?.ready();
     // Keep the two built-in navigation slots visible when the backend is not
     // running yet or is still an older version during a rolling restart.
   }
@@ -1009,12 +998,12 @@ function renderOrderAccounts(accounts) {
     $('#orderAccountDescription').textContent = `对应 ${orderAccountName(active)}；只读取该账号的订单，不修改或回写妙手。`;
   }
 }
-function openOrderAccount(accountId) {
-  if (!accountById(accountId)) return;
+function openOrderAccount(accountId, fromHistory = false) {
+  if (!accountById(accountId) && !fromHistory) return;
   activeOrderAccountId = accountId;
   latestOrderData = null;
   $('#orderShopFilter').value = '';
-  const name = orderAccountName(accountById(accountId));
+  const name = orderAccountName(accountById(accountId) || {id: accountId});
   $('#orderCenterTitle').textContent = `订单中心 / ${name}`;
   $('#orderAccountDescription').textContent = `对应 ${name}；只读取该账号的订单，不修改或回写妙手。`;
   setOrderAccountsExpanded(true);
@@ -1063,9 +1052,14 @@ function populateOrderShopFilter(orders) {
     current.count += 1;
     shops.set(key, current);
   });
+  (window.orderShopCharts?.shopsFor(activeOrderAccountId) || []).forEach(shop => {
+    if (!shop.shopKey) return;
+    if (shops.has(shop.shopKey)) shops.get(shop.shopKey).name = shop.displayName;
+    else shops.set(shop.shopKey, {name: shop.displayName, count: 0, historyOnly: true});
+  });
   select.innerHTML = '<option value="">全部店铺</option>' + [...shops.entries()]
     .sort(([, left], [, right]) => left.name.localeCompare(right.name, 'zh-CN'))
-    .map(([key, shop]) => `<option value="${orderText(key)}">${orderText(shop.name)}（${shop.count}）</option>`).join('');
+    .map(([key, shop]) => `<option value="${orderText(key)}">${orderText(shop.name)}（${shop.historyOnly ? '历史' : shop.count}）</option>`).join('');
   select.value = shops.has(selected) ? selected : '';
 }
 function renderOrders(data) {
@@ -1078,6 +1072,7 @@ function renderOrders(data) {
   populateOrderShopFilter(allOrders);
   const selectedShop = $('#orderShopFilter')?.value || '';
   const orders = selectedShop ? allOrders.filter((order) => orderShopKey(order) === selectedShop) : allOrders;
+  window.orderShopCharts?.selectionChanged(selectedShop);
   const summary = data?.summary || {};
   $('#orderSyncCount').textContent = `本地订单 ${Number(summary.count || 0)} 条`;
   renderOrderSyncTime(summary.lastSyncedAt);
@@ -1108,7 +1103,7 @@ function renderOrders(data) {
         <dl class="order-record-meta"><div><dt>下单</dt><dd>${orderText(order.orderedAt || '—')}</dd></div><div><dt>更新</dt><dd>${orderText(order.updatedAtRemote || order.syncedAt || '—')}</dd></div><div><dt>运单</dt><dd>${orderText(order.trackingNo || '—')}</dd></div></dl>
       </div>
     </article>`;
-  }).join('') : `<p class="live-empty">${selectedShop ? '该店铺暂无已同步订单。' : '暂无本地订单记录。'}</p>`;
+  }).join('') : `<p class="live-empty">${selectedShop ? '当前最近订单中暂无该店铺的明细，历史数量可查看上方图表。' : '暂无本地订单记录。'}</p>`;
 }
 async function loadOrders() {
   const accountId = activeOrderAccountId;
@@ -1139,6 +1134,7 @@ async function syncOrders() {
     if (!response.ok) throw new Error(body.error || '订单同步失败');
     if (body.data?.accountId !== accountId) throw Error('订单返回账号不匹配，请重启服务后重试');
     if (revision === orderRequestRevision && accountId === activeOrderAccountId) renderOrders(body.data);
+    window.orderShopCharts?.ordersSynced(accountId);
     showToast(`订单中心 ${accountId} 已同步 ${Number(body.data?.imported || 0)} 条订单记录`);
   } catch (error) { showToast(error.message || '订单同步失败'); }
   finally {
@@ -3547,6 +3543,13 @@ $$('.nav-item').forEach((button) => {
   else if (button.dataset.accountId) bindCollectionAccountNavigation(button);
   else button.addEventListener('click', () => activatePage(button.dataset.page));
 });
+$('#collectionAccountSwitchToggle')?.addEventListener('click', () => setMiaoshouCollectionExpanded(!miaoshouCollectionExpanded));
+document.addEventListener('click', event => {
+  if (miaoshouCollectionExpanded && !$('#collectionAccountSwitcher')?.contains(event.target)) setMiaoshouCollectionExpanded(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && miaoshouCollectionExpanded) { setMiaoshouCollectionExpanded(false); $('#collectionAccountSwitchToggle')?.focus(); }
+});
 $('#addEmptyCollection')?.addEventListener('click', () => mutateEmptyCollection());
 $('#deleteEmptyCollection')?.addEventListener('click', () => mutateEmptyCollection(activeMiaoshouCollectionAccountId));
 renderHistory(); renderTasks();
@@ -3575,3 +3578,26 @@ organizeLiveModules();
 setupPaneResizers();
 checkApiStatus();
 loadAutomationJobs();
+
+window.orderShopCharts?.configure({
+  onLoaded(accountId) {
+    if (accountId === activeOrderAccountId && latestOrderData?.accountId === accountId) renderOrders(latestOrderData);
+  },
+  onSelect(shop) {
+    if (shop.accountId !== activeOrderAccountId || !shop.shopKey || latestOrderData?.accountId !== shop.accountId) return;
+    populateOrderShopFilter(latestOrderData.orders || []);
+    $('#orderShopFilter').value = shop.shopKey;
+    renderOrders(latestOrderData);
+  },
+});
+
+window.workbenchNavigation?.configure({
+  navigate(route) {
+    if (route.page === 'orders') openOrderAccount(route.orderAccountId, true);
+    else if (route.page === 'workbench' || route.page === 'collectionAccount') openMiaoshouCollectionAccount(activeMiaoshouCollectionAccountId);
+    else activatePage(route.page);
+  },
+  current() {
+    return {page: document.querySelector('.page.active')?.id || 'workbench', orderAccountId: activeOrderAccountId};
+  },
+});
