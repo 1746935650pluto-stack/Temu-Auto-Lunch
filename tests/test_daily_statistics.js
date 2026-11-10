@@ -7,7 +7,9 @@ const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
 function setup() {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek']) document.createNode(id);
+  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint']) document.createNode(id);
+  document.createNode('collectionContext').className = 'collection-context-bar';
+  document.createElementNS = (ns, tag) => document.createElement(tag);
   document.addEventListener = (name, callback) => events[name] = callback;
   const context = {document, window: {}, Date, URLSearchParams, AbortController, Blob, URL, setTimeout,
     openOrderAccount: id => opened.push(id), activeOrderAccountId: 2, activatePage: id => opened.push(id),
@@ -43,12 +45,65 @@ test('filter changes clear old data and disable stale exports', async () => {
 });
 test('integrated tabs retain order account and hide outside statistics', async () => {
   const s=setup();s.window.dataStatistics.setPage('orders');
+  assert.equal(s.el('collectionContext').hidden,true);
   assert.equal(s.el('statisticsTabs').hidden,false);assert.equal(s.el('statisticsOrdersTab').attrs['aria-selected'],'true');
   await s.el('statisticsOrdersTab').dispatch('click');assert.deepEqual(s.opened,[2]);
-  s.window.dataStatistics.setPage('settings');assert.equal(s.el('statisticsTabs').hidden,true);
+  s.window.dataStatistics.setPage('dataStatistics');assert.equal(s.el('collectionContext').hidden,true);
+  s.window.dataStatistics.setPage('settings');assert.equal(s.el('statisticsTabs').hidden,true);assert.equal(s.el('collectionContext').hidden,false);
 });
 test('request failures show errors and keep export disabled', async () => {
   const s=setup();const pending=s.window.dataStatistics.open();
   s.requests[0].resolve({ok:false,json:async()=>({error:'invalid range'})});await pending;
   assert.match(s.el('statisticsStatus').textContent,/invalid range/);assert.equal(s.el('statisticsExport').disabled,true);
+});
+
+test('chart sorts dates and accounts and compares values on one zero-based scale', async () => {
+  const s=setup(), data=result('NL'), base=data.rows[0];
+  data.rows=[{...base,date:'2026-11-10',accountId:2,accountName:'Bao',orders:15},
+    {...base,date:'2026-11-09',orders:206}, {...base,date:'2026-11-10',orders:103},
+    {...base,date:'2026-11-09',accountId:2,accountName:'Bao',orders:32}];
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const bars=s.el('statisticsChartPlot').children[0].children.filter(node=>node.attrs['data-chart-account']);
+  assert.deepEqual(bars.map(node=>[node.attrs['data-chart-date'],node.attrs['data-chart-account']]),
+    [['2026-11-09','1'],['2026-11-09','2'],['2026-11-10','1'],['2026-11-10','2']]);
+  assert.equal(Number(bars[0].children[1].attrs.height),Number(bars[2].children[1].attrs.height)*2);
+  assert.equal(bars[0].children[1].attrs.fill,bars[2].children[1].attrs.fill);
+  assert.match(s.el('statisticsChartLegend').textContent,/NLBao/);
+  await bars[1].dispatch('focus');assert.match(s.el('statisticsChartHint').textContent,/2026-11-09.*Bao.*32/);
+  await bars[1].dispatch('keydown',{key:'Enter'});assert.deepEqual(s.opened,[2]);
+});
+
+test('metric and table switches reuse loaded data without another request', async () => {
+  const s=setup(), pending=s.window.dataStatistics.open();
+  s.requests[0].resolve({ok:true,json:async()=>({data:result('one')})});await pending;
+  assert.equal(s.el('statisticsTable').hidden,true);
+  s.el('statisticsMetric').value='collected';await s.el('statisticsMetric').dispatch('change');
+  assert.match(s.el('statisticsChartTitle').textContent,/采集入池/);
+  const bar=s.el('statisticsChartPlot').children[0].children.find(node=>node.attrs['data-chart-account']);
+  assert.match(bar.attrs['aria-label'],/采集入池 3/);
+  await bar.dispatch('click');assert.equal(s.opened.length,0);
+  await s.el('statisticsTableView').dispatch('click');
+  assert.equal(s.el('statisticsTable').hidden,false);assert.equal(s.el('statisticsChartPanel').hidden,true);
+  await s.el('statisticsChartView').dispatch('click');assert.equal(s.el('statisticsChartPanel').hidden,false);
+  assert.equal(s.requests.length,1);
+});
+
+test('zero values use finite geometry and changing account filters clears the chart', async () => {
+  const s=setup(),data=result('<img account>');data.rows[0].orders=0;
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const svg=s.el('statisticsChartPlot').children[0];
+  assert.doesNotMatch(JSON.stringify(svg.children.map(node=>node.attrs)),/NaN|Infinity/);
+  const group=svg.children.find(node=>node.attrs['data-chart-account']);
+  assert.equal(group.children[1].attrs.height,'0');assert.match(s.el('statisticsChartHint').textContent,/均为 0/);
+  assert.equal(s.el('statisticsChartLegend').children[0].children[1].textContent,'<img account>');
+  await s.el('statisticsAccount').dispatch('change');assert.equal(s.el('statisticsChartPlot').children.length,0);
+});
+
+test('long ranges keep one bar per visible account and date in a scrollable chart', async () => {
+  const s=setup(),data=result('one'),base=data.rows[0];data.rows=[];
+  for(let day=1;day<=30;day++) for(let account=1;account<=7;account++) data.rows.push({...base,date:`2026-10-${String(day).padStart(2,'0')}`,accountId:account,accountName:`account-${account}`,orders:day});
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const svg=s.el('statisticsChartPlot').children[0];
+  assert.equal(svg.children.filter(node=>node.attrs['data-chart-account']).length,210);
+  assert.ok(Number(svg.attrs.width)>760);assert.equal(s.el('statisticsChartLegend').children.length,7);
 });
