@@ -38,11 +38,12 @@ test('render escapes account names and opens matching order account', async () =
   assert.equal(s.el('statisticsCards').children.length,5);
   assert.doesNotMatch(s.el('statisticsCards').textContent+s.el('statisticsStatus').textContent,/金额|币种|USD/);
 });
-test('filter changes clear old data and disable stale exports', async () => {
+test('date edits clear old data and disable stale exports without fetching', async () => {
   const s = setup(); const pending = s.window.dataStatistics.open();
   s.requests[0].resolve({ok:true,json:async()=>({data:result('one')})}); await pending;
-  await s.el('statisticsAccount').dispatch('change');
+  await s.el('statisticsStart').dispatch('change');
   assert.equal(s.el('statisticsRows').children.length,0);assert.equal(s.el('statisticsExport').disabled,true);
+  assert.equal(s.requests.length,1);
 });
 test('integrated tabs retain order account and hide outside statistics', async () => {
   const s=setup();s.window.dataStatistics.setPage('orders');
@@ -90,7 +91,7 @@ test('metric and table switches reuse loaded data without another request', asyn
   assert.equal(s.requests.length,1);
 });
 
-test('zero values use finite geometry and changing account filters clears the chart', async () => {
+test('zero values use finite geometry and editing dates clears the chart', async () => {
   const s=setup(),data=result('<img account>');data.rows[0].orders=0;
   const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
   const svg=s.el('statisticsChartPlot').children[0];
@@ -98,7 +99,90 @@ test('zero values use finite geometry and changing account filters clears the ch
   const group=svg.children.find(node=>node.attrs['data-chart-account']);
   assert.equal(group.children[1].attrs.height,'0');assert.match(s.el('statisticsChartHint').textContent,/均为 0/);
   assert.equal(s.el('statisticsChartLegend').children[0].children[1].textContent,'<img account>');
-  await s.el('statisticsAccount').dispatch('change');assert.equal(s.el('statisticsChartPlot').children.length,0);
+  await s.el('statisticsStart').dispatch('change');assert.equal(s.el('statisticsChartPlot').children.length,0);
+});
+
+function accountResult(id,name,orders) {
+  const data=result(name);
+  data.accounts=[{id:1,name:'NL'},{id:2,name:'Bao'},{id:4,name:'LULU'}];
+  data.rows[0].accountId=id;data.rows[0].orders=orders;data.totals.orders=orders;
+  return data;
+}
+
+test('changing account automatically refreshes cards, chart, rows and export using current dates', async()=>{
+  const s=setup();s.el('statisticsStart').value='2026-11-04';s.el('statisticsEnd').value='2026-11-10';
+  const initial=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data:accountResult(1,'NL',103)})});await initial;
+  s.el('statisticsAccount').value='2';const pending=s.el('statisticsAccount').dispatch('change');
+  assert.equal(s.requests.length,2);
+  const query=new URL(s.requests[1].url,'http://localhost').searchParams;
+  assert.equal(query.get('accountId'),'2');assert.equal(query.get('start'),'2026-11-04');assert.equal(query.get('end'),'2026-11-10');
+  assert.equal(s.el('statisticsCards').children.length,0);assert.equal(s.el('statisticsRows').children.length,0);
+  assert.equal(s.el('statisticsChartPlot').children.length,0);assert.equal(s.el('statisticsExport').disabled,true);
+  assert.match(s.el('statisticsStatus').textContent,/正在读取/);
+  s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await pending;
+  assert.equal(s.el('statisticsAccount').value,'2');assert.equal(s.el('statisticsExport').disabled,false);
+  assert.match(s.el('statisticsRows').textContent,/Bao/);assert.doesNotMatch(s.el('statisticsRows').textContent,/NL/);
+  assert.equal(s.el('statisticsCards').children[0].children[1].textContent,'15');
+  const bar=s.el('statisticsChartPlot').children[0].children.find(node=>node.attrs['data-chart-account']);
+  assert.equal(bar.attrs['data-chart-account'],'2');assert.match(bar.attrs['aria-label'],/Bao.*15/);
+});
+
+test('rapid automatic account changes abort earlier reads and ignore late responses', async()=>{
+  const s=setup();s.el('statisticsAccount').value='2';const earlier=s.el('statisticsAccount').dispatch('change');
+  s.el('statisticsAccount').value='4';const latest=s.el('statisticsAccount').dispatch('change');
+  assert.equal(s.requests.length,2);assert.equal(s.requests[0].options.signal.aborted,true);
+  assert.equal(s.requests[1].options.signal.aborted,false);
+  s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(4,'LULU',10)})});await latest;
+  s.requests[0].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await earlier;
+  assert.equal(s.el('statisticsAccount').value,'4');assert.match(s.el('statisticsRows').textContent,/LULU/);
+  assert.doesNotMatch(s.el('statisticsRows').textContent,/Bao/);assert.match(s.el('statisticsChartLegend').textContent,/LULU/);
+  assert.equal(s.el('statisticsCards').children[0].children[1].textContent,'10');
+});
+
+test('automatic account refresh preserves table view and reports failures without old data', async()=>{
+  const s=setup();const initial=s.window.dataStatistics.open();
+  s.requests[0].resolve({ok:true,json:async()=>({data:accountResult(1,'NL',103)})});await initial;
+  await s.el('statisticsTableView').dispatch('click');
+  s.el('statisticsAccount').value='2';const pending=s.el('statisticsAccount').dispatch('change');
+  s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await pending;
+  assert.equal(s.el('statisticsTable').hidden,false);assert.equal(s.el('statisticsChartPanel').hidden,true);
+  assert.match(s.el('statisticsRows').textContent,/Bao/);
+  s.el('statisticsAccount').value='4';const failure=s.el('statisticsAccount').dispatch('change');
+  s.requests[2].resolve({ok:false,json:async()=>({error:'temporary failure'})});await failure;
+  assert.match(s.el('statisticsStatus').textContent,/temporary failure/);assert.equal(s.el('statisticsExport').disabled,true);
+  assert.equal(s.el('statisticsRows').children.length,0);assert.equal(s.el('statisticsCards').children.length,0);
+});
+
+test('summary cards switch chart metrics and dropdown without fetching again', async()=>{
+  const s=setup(),data=result('NL');Object.assign(data.rows[0],{saved:5,submitted:7,editFailed:2,publishFailed:4});
+  Object.assign(data.totals,{saved:5,submitted:7,editFailed:2,publishFailed:4});
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const expected=[['orders',4],['collected',3],['saved',5],['submitted',7],['failed',6]];
+  for(let index=0;index<expected.length;index++){
+    const card=s.el('statisticsCards').children[index];assert.equal(card.tagName,'BUTTON');
+    await card.dispatch('click');assert.equal(s.el('statisticsMetric').value,expected[index][0]);
+    const bar=s.el('statisticsChartPlot').children[0].children.find(node=>node.attrs['data-chart-account']);
+    assert.ok(bar.attrs['aria-label'].endsWith(' '+expected[index][1]));
+    assert.equal(card.attrs['aria-pressed'],'true');
+    assert.equal(s.el('statisticsCards').children.filter(node=>node.attrs['aria-pressed']==='true').length,1);
+  }
+  assert.match(s.el('statisticsChartTitle').textContent,/编辑／发布异常/);assert.equal(s.requests.length,1);
+  s.el('statisticsMetric').value='collected';await s.el('statisticsMetric').dispatch('change');
+  assert.equal(s.el('statisticsCards').children[1].attrs['aria-pressed'],'true');
+  assert.equal(s.el('statisticsCards').children[4].attrs['aria-pressed'],'false');
+});
+
+test('clicking a summary card opens its chart from table view and retains selection after account refresh', async()=>{
+  const s=setup(),pending=s.window.dataStatistics.open();
+  s.requests[0].resolve({ok:true,json:async()=>({data:accountResult(1,'NL',103)})});await pending;
+  await s.el('statisticsTableView').dispatch('click');await s.el('statisticsCards').children[1].dispatch('click');
+  assert.equal(s.el('statisticsTable').hidden,true);assert.equal(s.el('statisticsChartPanel').hidden,false);
+  assert.equal(s.el('statisticsMetric').disabled,false);assert.equal(s.el('statisticsMetric').value,'collected');
+  s.el('statisticsAccount').value='2';const refresh=s.el('statisticsAccount').dispatch('change');
+  s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await refresh;
+  assert.equal(s.el('statisticsMetric').value,'collected');
+  assert.equal(s.el('statisticsCards').children[1].attrs['aria-pressed'],'true');
+  assert.equal(s.el('statisticsCards').children[0].attrs['aria-pressed'],'false');assert.equal(s.requests.length,2);
 });
 
 test('long ranges keep one bar per visible account and date in a scrollable chart', async () => {

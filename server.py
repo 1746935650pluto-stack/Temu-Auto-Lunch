@@ -60,7 +60,7 @@ from attribute_ai import (AttributeInferenceError, category_path, complete_attri
 from item_editor import (apply_blade_length_default, apply_fabric_weight_default, apply_thickness_default, apply_textile_fiber_composition_default, apply_food_contact_default, apply_source_origin_default, apply_required_choice_default,
                          apply_food_contact_usage_default, fill_empty_sale_options, fingerprint, normalize_item,
                          normalize_show_size_template_ids, remove_inactive_numeric_attributes)
-from order_sync import OrderSyncStore, extract_package_rows
+from order_sync import OrderSyncStore, extract_package_rows, normalize_package
 from daily_statistics import DailyStatistics, shop_report
 from attribute_defaults import apply_attribute_defaults, default_rule
 from zhihou import ZhiHouApiError, ZhiHouClient
@@ -72,7 +72,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.198'
+APP_VERSION = '1.2.199'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -177,6 +177,7 @@ MIAOSHOU_PACKAGE_LIST_PAYLOAD = os.getenv(
     'MIAOSHOU_PACKAGE_LIST_PAYLOAD', '{"page":1,"pageSize":100}'
 ).strip()
 ORDER_SYNC_MAX_RECORDS = 1000
+ORDER_HISTORY_MAX_RECORDS = 20000
 ORDER_SYNC_PAGE_SIZE = 100
 CATEGORY_CACHE_TTL_SECONDS = 60 * 60
 DEFAULT_AUTOMATION_BATCH_INTERVAL_SECONDS = 10
@@ -247,8 +248,11 @@ def miaoshou_package_list_payload() -> dict[str, Any]:
     return payload
 
 
-def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None) -> int:
-    """Read up to 1,000 package rows through MiaoShou's paginated API."""
+def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None,
+                             *, max_records: int = ORDER_SYNC_MAX_RECORDS) -> int:
+    """Refresh recent orders; manual imports can also fill retained history."""
+    if type(max_records) is not int or not 1 <= max_records <= ORDER_HISTORY_MAX_RECORDS:
+        raise ValueError('订单同步数量上限不正确')
     base_payload = miaoshou_package_list_payload()
     try:
         start_page = int(base_payload.pop('page', 1) or 1)
@@ -257,15 +261,21 @@ def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None) 
     if start_page < 1:
         raise ValueError('订单同步页码必须大于 0')
     base_payload.pop('pageNo', None)
-    collected: list[dict[str, Any]] = []
-    for page in range(start_page, start_page + (ORDER_SYNC_MAX_RECORDS // ORDER_SYNC_PAGE_SIZE)):
+    collected: dict[str, dict[str, Any]] = {}
+    pages = (max_records + ORDER_SYNC_PAGE_SIZE - 1) // ORDER_SYNC_PAGE_SIZE
+    for page in range(start_page, start_page + pages):
         payload = {**base_payload, 'page': page, 'pageSize': ORDER_SYNC_PAGE_SIZE}
         response = vendor(MIAOSHOU_PACKAGE_LIST_PATH, payload)
         rows = extract_package_rows(response)
         if not rows:
             break
-        collected.extend(rows)
-        if len(collected) >= ORDER_SYNC_MAX_RECORDS:
+        before = len(collected)
+        for row in rows:
+            key = normalize_package(row)['recordKey']
+            collected[key] = row
+        if len(collected) == before:
+            raise ValueError('订单分页重复，已保留原订单，请稍后重试')
+        if len(collected) >= max_records:
             break
         data = response.get('data') if isinstance(response, dict) else None
         total = data.get('total') if isinstance(data, dict) else None
@@ -273,7 +283,7 @@ def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None) 
             break
         if len(rows) < ORDER_SYNC_PAGE_SIZE and not isinstance(total, int):
             break
-    return (store or ORDER_SYNC_STORE).replace_snapshot(collected[:ORDER_SYNC_MAX_RECORDS])
+    return (store or ORDER_SYNC_STORE).replace_snapshot(list(collected.values())[:max_records])
 
 
 def order_account(raw_id: Any = 1) -> dict[str, Any]:
@@ -3585,8 +3595,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 sync_lock = lock
                 store = order_store(account['id'])
                 vendor = self._vendor if account['id'] == 1 else lambda path, payload: self._account_vendor(path, payload, account['id'])
-                imported = sync_miaoshou_order_pages(vendor, store)
-                self._json(HTTPStatus.OK, {'data': {**order_view(account, store), 'imported': imported}})
+                imported = sync_miaoshou_order_pages(vendor, store, max_records=ORDER_HISTORY_MAX_RECORDS)
+                data = {**order_view(account, store), 'imported': imported}
+                if imported >= ORDER_HISTORY_MAX_RECORDS:
+                    data['message'] = '本轮已达到 20,000 条历史读取上限，更早订单可能仍未完整同步。'
+                self._json(HTTPStatus.OK, {'data': data})
             except ValueError as error:
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
             except RuntimeError as error:
