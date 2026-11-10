@@ -8,16 +8,16 @@
     const total = rows.reduce((sum, row) => sum + row.value, 0);
     if (!Number.isFinite(total)) throw new Error('统计总量超出可展示范围');
     const rounded = rows.map((row, index) => {
-      const exact = total ? row.value / total * 1000 : 0;
+      const exact = total ? row.value / total * 10000 : 0;
       return {index, units: Math.floor(exact), fraction: exact - Math.floor(exact)};
     });
-    let remainder = total ? 1000 - rounded.reduce((sum, row) => sum + row.units, 0) : 0;
+    let remainder = total ? 10000 - rounded.reduce((sum, row) => sum + row.units, 0) : 0;
     for (const row of [...rounded].sort((a,b) => b.fraction - a.fraction || a.index - b.index)) {
       if (remainder-- <= 0) break;
       row.units++;
     }
     return {total, rows: rows.map((row, index) => ({...row, share: total ? row.value / total : 0,
-      percentage: (rounded[index].units / 10).toFixed(1) + '%'}))};
+      percentage: row.value > 0 && rounded[index].units === 0 ? '<0.01%' : (rounded[index].units / 100).toFixed(2) + '%'}))};
   }
   function color(key) {
     let hash = 0;

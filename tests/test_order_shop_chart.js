@@ -20,7 +20,7 @@ function respond(request,data){request.resolve({ok:true,json:async()=>({data})})
 test('shop pie displays current account proportions and legend/keyboard keeps exact store identity',async()=>{
   const s=setup(),pending=s.chart.open(5);respond(s.requests[0],report(5,'Alpha'));await pending;
   await s.el('orderShopPieView').dispatch('click');const rows=s.el('orderShopPlot').querySelectorAll('button');
-  assert.match(rows[0].attrs['aria-label'],/Alpha.*75.0%/);assert.match(rows[1].attrs['aria-label'],/Beta.*25.0%/);
+  assert.match(rows[0].attrs['aria-label'],/Alpha.*75.00%/);assert.match(rows[1].attrs['aria-label'],/Beta.*25.00%/);
   await rows[1].dispatch('click');await s.el('orderShopPlot').querySelectorAll('g')[0].dispatch('keydown',{key:'Enter'});
   assert.equal(s.selected[0].accountId,5);assert.equal(s.selected[0].shopKey,'2');assert.equal(s.selected[1].shopKey,'1');
   s.chart.selectionChanged('2');assert.equal(s.requests.length,1);assert.equal(s.el('orderShopPieView').attrs['aria-pressed'],'true');
@@ -29,7 +29,7 @@ test('shop pie displays current account proportions and legend/keyboard keeps ex
 test('changing shop pie metric reuses data and late previous accounts cannot replace it',async()=>{
   const s=setup(),first=s.chart.open(1);respond(s.requests[0],report(1,'Old'));await first;await s.el('orderShopPieView').dispatch('click');
   s.el('orderShopMetric').value='quantity';await s.el('orderShopMetric').dispatch('change');
-  assert.match(s.el('orderShopPlot').querySelectorAll('button')[0].attrs['aria-label'],/Beta.*81.8%/);assert.equal(s.requests.length,1);
+  assert.match(s.el('orderShopPlot').querySelectorAll('button')[0].attrs['aria-label'],/Beta.*81.82%/);assert.equal(s.requests.length,1);
   const stale=s.chart.open(1),current=s.chart.open(2);respond(s.requests[2],report(2,'New'));await current;respond(s.requests[1],report(1,'Old'));await stale;
   assert.equal(s.el('orderShopPieView').attrs['aria-pressed'],'true');assert.match(s.el('orderShopPlot').textContent,/New/);assert.doesNotMatch(s.el('orderShopPlot').textContent,/Old/);
 });

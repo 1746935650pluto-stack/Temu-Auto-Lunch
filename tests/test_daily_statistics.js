@@ -118,7 +118,7 @@ test('account pie aggregates the selected date range per account and opens exact
   const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
   await s.el('statisticsPieView').dispatch('click');assert.match(s.el('statisticsChartTitle').textContent,/账号占比/);
   const rows=s.el('statisticsChartPlot').querySelectorAll('button');assert.equal(rows.length,3);
-  assert.match(rows[0].attrs['aria-label'],/Alpha.*8.*80.0%/);assert.match(rows[1].attrs['aria-label'],/Beta.*2.*20.0%/);assert.match(rows[2].attrs['aria-label'],/0.0%/);
+  assert.match(rows[0].attrs['aria-label'],/Alpha.*8.*80.00%/);assert.match(rows[1].attrs['aria-label'],/Beta.*2.*20.00%/);assert.match(rows[2].attrs['aria-label'],/0.00%/);
   await rows[1].dispatch('click');assert.deepEqual(s.opened,[2]);assert.equal(s.requests.length,1);
 });
 
@@ -127,7 +127,7 @@ test('pie metrics and summary cards stay linked while switching accounts keeps p
   data.rows[0].editFailed=2;data.rows[0].publishFailed=3;data.totals.editFailed=2;data.totals.publishFailed=3;
   s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;await s.el('statisticsPieView').dispatch('click');
   await s.el('statisticsCards').children[4].dispatch('click');assert.equal(s.el('statisticsPieView').attrs['aria-pressed'],'true');
-  assert.match(s.el('statisticsChartPlot').textContent,/100.0%/);assert.match(s.el('statisticsChartPlot').querySelectorAll('div').map(n=>n.attrs['aria-label']||'').join(' '),/异常 5/);
+  assert.match(s.el('statisticsChartPlot').textContent,/100.00%/);assert.match(s.el('statisticsChartPlot').querySelectorAll('div').map(n=>n.attrs['aria-label']||'').join(' '),/异常 5/);
   s.el('statisticsAccount').value='2';const next=s.el('statisticsAccount').dispatch('change');assert.equal(s.el('statisticsChartPlot').children.length,0);
   s.requests[1].resolve({ok:true,json:async()=>({data:accountResult(2,'Bao',15)})});await next;
   assert.equal(s.el('statisticsPieView').attrs['aria-pressed'],'true');assert.doesNotMatch(s.el('statisticsChartPlot').textContent,/NL/);assert.equal(s.requests.length,2);
