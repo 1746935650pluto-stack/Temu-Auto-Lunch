@@ -169,8 +169,8 @@ function navigateLiveFlow(stage) {
 function activatePage(pageId) {
   window.workbenchNavigation?.record(pageId, activeOrderAccountId);
   if (pageId !== 'collectionAccount') clearCollectionCredentialInputs();
-  if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); }
-  else clearDeepSeekInput();
+  if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); window.shippingBindings?.open(); }
+  else { clearDeepSeekInput(); window.shippingBindings?.close(); }
   const displayPage = pageId;
   window.dataStatistics?.setPage(pageId);
   document.body.classList.toggle('workbench-active', displayPage === 'workbench');
@@ -1165,6 +1165,7 @@ function saveAutomationPreferences() {
       price: $('#automationSkuPrice').value,
       priceMode: $('#automationPriceMode').value,
       priceMultiplier: $('#automationPriceMultiplier').value,
+      priceOffset: $('#automationPriceOffset').value,
       intervalSeconds: $('#publishQueuePublishInterval').value,
       publishIntervalDefaultVersion: 2,
       publishCount: $('#publishQueuePublishCount').value,
@@ -1174,11 +1175,15 @@ function saveAutomationPreferences() {
   } catch (_) { /* Browser storage is optional; the current page still works. */ }
 }
 function updateAutomationPriceMode() {
-  const multiplierMode = $('#automationPriceMode').value === 'source_multiplier';
-  $('#automationPriceFloorLabel').hidden = multiplierMode;
-  $('#automationPriceMultiplierLabel').hidden = !multiplierMode;
-  $('#automationSkuPrice').disabled = multiplierMode;
-  $('#automationPriceMultiplier').disabled = !multiplierMode;
+  const mode = $('#automationPriceMode').value;
+  for (const [kind, label, input] of [
+    ['floor', 'automationPriceFloorLabel', 'automationSkuPrice'],
+    ['source_multiplier', 'automationPriceMultiplierLabel', 'automationPriceMultiplier'],
+    ['source_add', 'automationPriceOffsetLabel', 'automationPriceOffset'],
+  ]) {
+    $('#' + label).hidden = mode !== kind;
+    $('#' + input).disabled = mode !== kind;
+  }
 }
 function automationClaimFeedback(message, tone = 'info') {
   const target = $('#automationClaimFeedback');
@@ -2712,6 +2717,7 @@ async function claimAutomationSelection() {
   const price = $('#automationSkuPrice').value.trim();
   const priceMode = $('#automationPriceMode').value;
   const priceMultiplier = $('#automationPriceMultiplier').value.trim();
+  const priceOffset = $('#automationPriceOffset')?.value.trim() ?? '0';
   const editConcurrency = Number($('#automationEditConcurrency').value);
   if ((!bound && !shopIds.length) || !site || !detailIds.length) {
     automationClaimFeedback('请选择池内商品、目标店铺和发布站点。', 'error'); return;
@@ -2729,7 +2735,7 @@ async function claimAutomationSelection() {
   if (!Number.isSafeInteger(editConcurrency) || editConcurrency < 1) {
     automationClaimFeedback('编辑并发数应为大于 0 的整数。', 'error'); return;
   }
-  if (!['floor', 'source_multiplier'].includes(priceMode)) {
+  if (!['floor', 'source_multiplier', 'source_add'].includes(priceMode)) {
     automationClaimFeedback('请选择有效的申报价方式。', 'error'); return;
   }
   if (priceMode === 'floor' && (!/^\d+(?:\.\d{1,2})?$/.test(price) || Number(price) <= 0 || Number(price) > 999980)) {
@@ -2738,16 +2744,20 @@ async function claimAutomationSelection() {
   if (priceMode === 'source_multiplier' && (!/^\d+(?:\.\d{1,4})?$/.test(priceMultiplier) || Number(priceMultiplier) <= 0 || Number(priceMultiplier) > 1000)) {
     automationClaimFeedback('原始价格倍数应大于 0、最多四位小数且不超过 1000。', 'error'); return;
   }
+  if (priceMode === 'source_add' && (!/^\d+(?:\.\d{1,2})?$/.test(priceOffset) || Number(priceOffset) < 0 || Number(priceOffset) > 999999.99)) {
+    automationClaimFeedback('原价加价 X 应为 0 到 999999.99 元，最多两位小数。', 'error'); return;
+  }
   if (liveState.mode !== 'live') { automationClaimFeedback('当前服务为只读模式，不能自动编辑保存。', 'error'); return; }
   automationState.submitting = true; updateAutomationControls();
   const priceDescription = priceMode === 'source_multiplier'
     ? `按原始 SKU 价格 × ${priceMultiplier} 计算`
+    : priceMode === 'source_add' ? `按原始 SKU 价格 + ${priceOffset} 元计算`
     : `按固定下限 ${price} ～ ${Number(price) + 20} 随机生成`;
   automationClaimFeedback(`正在创建 ${taskCount} 个后台编辑保存任务${bound ? `（按所属人员绑定，${routedCount} 件匹配，${detailIds.length - routedCount} 件将跳过）` : ''}（${priceDescription}）…`);
   try {
     const response = await fetch('/api/automation/batch-run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ detailIds, shopIds, site, price, priceMode, priceMultiplier, editConcurrency, confirmation: 'AUTOMATE_AND_SAVE_BATCH',
+      body: JSON.stringify({ detailIds, shopIds, site, price, priceMode, priceMultiplier, priceOffset, editConcurrency, confirmation: 'AUTOMATE_AND_SAVE_BATCH',
         ...(bound ? {targetMode: 'personnel', accountId: activeMiaoshouCollectionAccountId, bindingScope: automationState.routing.scope, expectedRouting} : {}),
         duplicateConfirmation: 'ALLOW_DUPLICATE_PUBLISH' }),
     });
@@ -3360,8 +3370,8 @@ function updateApplicationVersion(health) {
   const installed=health.resourceVersion || resource;
   const pending=health.pendingUpdate===true || Boolean(installed && installed!==runtime);
   const reload=Boolean(resource && installed && resource!==installed);
-  const suffix=pending?(reload?` · 新版 V${installed} 待安全更新`:' · 待安全更新'):reload?' · 请刷新网页':'';
-  label.textContent=resource?`界面 V${resource} · 后台 V${runtime}${suffix}`:`后台版本 V${runtime}`;
+  const suffix=pending?(reload?`\n新版 V${installed} 待安全更新`:'\n待安全更新'):reload?'\n请刷新网页':'';
+  label.textContent=resource?`界面 V${resource}\n后台 V${runtime}${suffix}`:`后台版本 V${runtime}`;
   label.title=pending?'本机已有待启用的更新；后台安全更新后新功能将全部生效。':reload?'后台已更新，请刷新网页加载对应的界面资源。':'界面与后台版本一致';
   label.dataset.pendingUpdate=String(pending);
 }
@@ -3502,6 +3512,7 @@ $('#publishQueueShop').addEventListener('change', (event) => {
 $('#automationSkuPrice').addEventListener('change', saveAutomationPreferences);
 $('#automationPriceMode').addEventListener('change', () => { updateAutomationPriceMode(); saveAutomationPreferences(); });
 $('#automationPriceMultiplier').addEventListener('change', saveAutomationPreferences);
+$('#automationPriceOffset').addEventListener('change', saveAutomationPreferences);
 $('#automationEditConcurrency').addEventListener('change', saveAutomationPreferences);
 $('#automationSelectAll').addEventListener('change', (event) => selectAutomationPoolPage(event.target.checked));
 $('#automationPoolPrev').addEventListener('click', () => changeAutomationPoolPage(automationState.poolPage - 1));
@@ -3569,10 +3580,12 @@ if (Array.isArray(rememberedAutomationPreferences.publishQueueShopIds))
   automationState.publishQueueShopIds = [...new Set(rememberedAutomationPreferences.publishQueueShopIds.map(String).filter(id => /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && Number(id) > 0))];
 if (/^\d+$/.test(String(rememberedAutomationPreferences.editConcurrency || '')))
   $('#automationEditConcurrency').value = rememberedAutomationPreferences.editConcurrency;
-if (['floor', 'source_multiplier'].includes(String(rememberedAutomationPreferences.priceMode || '')))
+if (['floor', 'source_multiplier', 'source_add'].includes(String(rememberedAutomationPreferences.priceMode || '')))
   $('#automationPriceMode').value = rememberedAutomationPreferences.priceMode;
 if (/^\d+(?:\.\d{1,4})?$/.test(String(rememberedAutomationPreferences.priceMultiplier || '')))
   $('#automationPriceMultiplier').value = rememberedAutomationPreferences.priceMultiplier;
+if (/^\d+(?:\.\d{1,2})?$/.test(String(rememberedAutomationPreferences.priceOffset ?? '')))
+  $('#automationPriceOffset').value = rememberedAutomationPreferences.priceOffset;
 updateAutomationPriceMode();
 organizeLiveModules();
 setupPaneResizers();

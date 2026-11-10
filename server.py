@@ -63,6 +63,7 @@ from item_editor import (apply_blade_length_default, apply_fabric_weight_default
 from order_sync import OrderSyncStore, extract_package_rows, normalize_package
 from daily_statistics import DailyStatistics, shop_report
 from attribute_defaults import apply_attribute_defaults, default_rule
+from shipping_bindings import ShippingBindings
 from zhihou import ZhiHouApiError, ZhiHouClient
 from launcher_support import workbench_id
 
@@ -72,7 +73,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.199'
+APP_VERSION = '1.2.200'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -804,6 +805,63 @@ def automation_default_logistic_id(rows, kind):
     return str(option['id']) if option else ''
 
 
+def shipping_bindings():
+    return ShippingBindings(AUTOMATION_POOL.path.parent / 'shipping_bindings.sqlite3')
+
+
+def bound_logistics(account_id, shop_id, site, *, root=None):
+    if not account_id:
+        return {}
+    client = MiaoShouClient(account_id)
+    scope = hashlib.sha256(f'{account_id}\0{client.app_key}\0{client.app_secret}'.encode()).hexdigest()
+    return ShippingBindings((root or AUTOMATION_POOL.path.parent) / 'shipping_bindings.sqlite3').get(scope, shop_id, site)
+
+
+def automation_bound_logistic_id(rows, kind, binding):
+    selected = binding.get('freightId' if kind == 'freight' else 'warehouseId', '')
+    key = 'templateId' if kind == 'freight' else 'warehouseId'
+    if selected:
+        if not any(str(row.get(key)) == selected for row in rows):
+            raise ValueError('手动绑定的运费模板或发货仓库已失效，请到接口设置重新绑定')
+        return selected
+    return automation_default_logistic_id(rows, kind)
+
+
+def shipping_settings(account_id=None, shop_id=None, site=None, *, refresh=False):
+    service = shared_automation()
+    result = {'accounts': [{'id': a['id'], 'name': a['name'], 'configured': a['configured']}
+                           for a in service.accounts() if not a.get('removed')]}
+    if account_id is None:
+        return result
+    account = service.check_account(account_id)
+    vendor = service.worker(account['id'], cache_config=not refresh)._vendor
+    shops = vendor(SHOP_LIST, {'platform': 'pddkjChoice', 'site': 'PDDKJCHOICE', 'pageNo': 1, 'pageSize': 100}).get('data', {}).get('shopList')
+    sites = vendor(HALF_SITES, {}).get('data', {}).get('publishSiteOptions')
+    if not isinstance(shops, list) or not isinstance(sites, list):
+        raise ValueError('店铺或站点列表不完整，请刷新重试')
+    result.update(accountId=account['id'], scope=account['scope'],
+        shops=[{'id': str(row['shopId']), 'name': str(row.get('shopNick') or row.get('platformShopName') or row['shopId'])}
+               for row in shops if isinstance(row, dict) and row.get('shopId')],
+        sites=[{'id': str(row['key']), 'name': str(row.get('value') or row['key'])}
+               for row in sites if isinstance(row, dict) and row.get('key') and row['key'] != 'EU'])
+    if shop_id is None or site is None:
+        return result
+    if str(shop_id) not in {row['id'] for row in result['shops']} or site not in {row['id'] for row in result['sites']}:
+        raise ValueError('店铺或站点不属于当前账号，欧盟多子站点暂不支持单仓库绑定')
+    payload = {'shopId': shop_id, 'isRsync': int(refresh)}
+    for kind, path, field, id_key, name_key in (
+        ('freight', HALF_FREIGHT, 'shopIdAndFreightTemplateListMap', 'templateId', 'templateName'),
+        ('warehouses', HALF_WAREHOUSE, 'shopIdAndWarehouseListMap', 'warehouseId', 'warehouseName')):
+        data = vendor(path, payload).get('data', {}).get(field)
+        if not isinstance(data, dict) or not isinstance(data.get(str(shop_id), []), list):
+            raise ValueError('物流选项返回不完整，请重新读取')
+        result[kind] = [{'id': str(row[id_key]), 'name': str(row.get(name_key) or row[id_key])}
+                        for row in data.get(str(shop_id), []) if isinstance(row, dict) and row.get('site') == site and row.get(id_key)]
+    service.check_account(account['id'], account['scope'])
+    result.update(shopId=shop_id, site=site, binding=shipping_bindings().get(account['scope'], shop_id, site))
+    return result
+
+
 def automation_logistic_rows(vendor, kind, shop_id, site, selected_id=''):
     """Ask MiaoShou to resync a missing default/choice once before pausing."""
     path, field, id_key = (
@@ -1032,6 +1090,37 @@ def _source_sku_price_multiplier_declarations(item: dict[str, Any], multiplier: 
             Decimal('0.01'), rounding=ROUND_HALF_UP)
         declarations[str(sku_id)] = _normalize_automation_price(declaration)
     return declarations
+
+
+def _normalize_automation_price_offset(value: Any) -> Decimal:
+    try:
+        offset = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError('原价加价 X 必须是有效数字') from None
+    if not offset.is_finite() or offset < 0 or offset > Decimal('999999.99'):
+        raise ValueError('原价加价 X 必须在 0 到 999999.99 元之间')
+    if offset.as_tuple().exponent < -2:
+        raise ValueError('原价加价 X 最多保留两位小数')
+    return offset
+
+
+def _source_sku_price_add_declarations(item: dict[str, Any], offset: Any) -> dict[str, str]:
+    """Use each original source SKU price; never add to a previous declaration."""
+    offset = _normalize_automation_price_offset(offset)
+    sku_map = item.get('skuMap') if isinstance(item, dict) else None
+    if not isinstance(sku_map, dict) or not sku_map:
+        raise ValueError('本机快照没有 SKU 原始价格')
+    prices = {}
+    for sku_id, sku in sku_map.items():
+        try:
+            source = Decimal(str(sku.get('price', '')).strip()) if isinstance(sku, dict) else Decimal('NaN')
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError(f'SKU {sku_id} 没有有效的妙手原始价格') from None
+        if not source.is_finite() or source <= 0 or source > Decimal('1000000'):
+            raise ValueError(f'SKU {sku_id} 没有有效的妙手原始价格')
+        amount = (source + offset).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        prices[str(sku_id)] = _normalize_automation_price(amount)
+    return prices
 
 
 def _is_miaoshou_transient_error(error: BaseException) -> bool:
@@ -1313,7 +1402,8 @@ def run_automation_job(pool: AutomationPool, job_id: str, vendor: Any, get_item:
             raise ValueError('发布站点不在当前妙手站点列表中')
         if site == 'EU':
             raise ValueError('欧盟站需要多子站点物流配置，暂不支持自动发布')
-        selected_id = (job.get('choices', {}).get('freight') or {}).get('selectedId') or ''
+        binding = bound_logistics(getattr(pool, 'account_id', 1), shop_id, site, root=pool.path.parent)
+        selected_id = (job.get('choices', {}).get('freight') or {}).get('selectedId') or binding.get('freightId', '')
         freight_rows = automation_logistic_rows(guarded_vendor, 'freight', shop_id, site, selected_id)
         if selected_id:
             if not any(str(row['templateId']) == selected_id for row in freight_rows):
@@ -1332,7 +1422,7 @@ def run_automation_job(pool: AutomationPool, job_id: str, vendor: Any, get_item:
                 ])
                 return
             freight_id = str(defaults[0]['templateId'])
-        selected_warehouse = (job.get('choices', {}).get('warehouse') or {}).get('selectedId') or ''
+        selected_warehouse = (job.get('choices', {}).get('warehouse') or {}).get('selectedId') or binding.get('warehouseId', '')
         warehouse_rows = automation_logistic_rows(guarded_vendor, 'warehouse', shop_id, site, selected_warehouse)
         if selected_warehouse:
             if not any(str(row['warehouseId']) == selected_warehouse for row in warehouse_rows):
@@ -1354,7 +1444,7 @@ def run_automation_job(pool: AutomationPool, job_id: str, vendor: Any, get_item:
             raise ValueError('DeepSeek 未配置，无法润色中英文标题')
         if not fresh.get('title') or not fresh.get('skuMap') or not fresh.get('imgUrls'):
             raise ValueError('商品缺少标题、SKU 或图片')
-        preflight_message = '店铺、站点和「通用」运费及默认仓库配置已核对；不比较商品资料版本，按本次任务直接编辑并覆盖保存'
+        preflight_message = '店铺、站点、运费模板及仓库配置已核对；不比较商品资料版本，按本次任务直接编辑并覆盖保存'
         pool.update_job(job_id, step, 'done', preflight_message)
 
         step = 'prepare'
@@ -3155,6 +3245,24 @@ class AppHandler(SimpleHTTPRequestHandler):
             except sqlite3.Error:
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机人员绑定读取失败')
             return
+        if route.path == '/api/settings/shipping':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页请求')
+                return
+            try:
+                query = parse_qs(route.query)
+                account = int(query['accountId'][0]) if 'accountId' in query else None
+                shop = int(query['shopId'][0]) if 'shopId' in query else None
+                site = query.get('site', [None])[0]
+                self._json(HTTPStatus.OK, {'data': shipping_settings(account, shop, site,
+                    refresh=query.get('refresh', [''])[0] == '1')})
+            except (ValueError, TypeError) as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except RuntimeError as error:
+                self._error(HTTPStatus.BAD_GATEWAY, str(error))
+            except (OSError, sqlite3.Error):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '物流绑定读取失败')
+            return
         if route.path == '/api/settings/deepseek':
             if not self._same_origin():
                 self._error(HTTPStatus.FORBIDDEN, '只接受本地网页请求')
@@ -3324,6 +3432,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     data = {
                         "freight": self._vendor(HALF_FREIGHT, payload).get("data", {}),
                         "warehouse": self._vendor(HALF_WAREHOUSE, payload).get("data", {}),
+                        "bindings": shipping_bindings().shop(shared_automation().scope(self.collection_account_id), shop_id),
                     }
                 elif route.path == "/api/item":
                     detail_id = int(query.get("detailId", ["0"])[0])
@@ -3349,7 +3458,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         # The same directory also contains .env and server.py. Only public
         # browser assets are served, so secrets cannot be fetched over HTTP.
-        if route.path in {"/", "/index.html", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
+        if route.path in {"/", "/index.html", "/shipping-bindings.js", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
             super().do_GET()
             return
         self._error(HTTPStatus.NOT_FOUND, "未找到页面")
@@ -3430,6 +3539,40 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, 'DeepSeek 配置保存失败，请检查本机 .env 权限后重试')
                 return
             self._json(HTTPStatus.OK, {'data': result})
+            return
+        if route.path == '/api/settings/shipping':
+            if not self._local_configuration_origin():
+                self._error(HTTPStatus.FORBIDDEN, '物流绑定只接受本机同源页面提交')
+                return
+            try:
+                body = self._read_body(8192)
+                required = {'accountId', 'shopId', 'site', 'scope', 'revision', 'freightId', 'warehouseId', 'confirmation'}
+                if not isinstance(body, dict) or set(body) != required or body['confirmation'] not in {'SAVE_SHIPPING_BINDING', 'RESET_SHIPPING_BINDING'}:
+                    raise ValueError('物流绑定请求字段或确认不正确')
+                if type(body['accountId']) is not int or type(body['shopId']) is not int or body['shopId'] <= 0 or not isinstance(body['site'], str):
+                    raise ValueError('账号、店铺或站点不正确')
+                if not all(isinstance(body[key], str) for key in ('scope', 'freightId', 'warehouseId')):
+                    raise ValueError('物流绑定值不正确')
+                service = shared_automation()
+                service.check_account(body['accountId'], body['scope'])
+                data = shipping_settings(body['accountId'], body['shopId'], body['site'], refresh=True)
+                if data['scope'] != body['scope']:
+                    raise ValueError('账号凭据已变化，请重新读取绑定')
+                reset = body['confirmation'] == 'RESET_SHIPPING_BINDING'
+                if not reset and (body['freightId'] not in {row['id'] for row in data['freight']}
+                                  or body['warehouseId'] not in {row['id'] for row in data['warehouses']}):
+                    raise ValueError('请选择当前账号、店铺和站点下有效的运费模板与仓库')
+                with ACCOUNT_CONFIG_LOCK:
+                    service.check_account(body['accountId'], body['scope'])
+                    result = shipping_bindings().save(data['scope'], data['accountId'], data['shopId'], data['site'],
+                        '' if reset else body['freightId'], '' if reset else body['warehouseId'], body['revision'])
+                self._json(HTTPStatus.OK, {'data': {**data, 'binding': result}})
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except RuntimeError as error:
+                self._error(HTTPStatus.BAD_GATEWAY, str(error))
+            except (OSError, sqlite3.Error):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '物流绑定保存失败，原配置保留')
             return
         if route.path == '/api/settings/miaoshou-shops':
             if not self._local_configuration_origin():
@@ -3975,8 +4118,13 @@ class AppHandler(SimpleHTTPRequestHandler):
                 if price_mode == 'floor':
                     price_floor = _normalize_automation_price(body.get('price', '160'))
                     prices = [_randomize_automation_price(price_floor) for _ in unique_detail_ids]
-                elif price_mode == 'source_multiplier':
-                    multiplier = _normalize_automation_price_multiplier(body.get('priceMultiplier', ''))
+                elif price_mode in {'source_multiplier', 'source_add'}:
+                    if price_mode == 'source_add':
+                        factor = _normalize_automation_price_offset(body.get('priceOffset', ''))
+                        calculate = _source_sku_price_add_declarations
+                    else:
+                        factor = _normalize_automation_price_multiplier(body.get('priceMultiplier', ''))
+                        calculate = _source_sku_price_multiplier_declarations
                     prices = []
                     sku_prices = []
                     for detail_id in unique_detail_ids:
@@ -3984,7 +4132,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         if staged is None:
                             raise ValueError(f'采集箱 ID {detail_id} 不在自动化池中')
                         try:
-                            declarations = _source_sku_price_multiplier_declarations(staged['item'], multiplier)
+                            declarations = calculate(staged['item'], factor)
                         except ValueError as error:
                             raise ValueError(f'采集箱 ID {detail_id}：{error}') from None
                         sku_prices.append(declarations)

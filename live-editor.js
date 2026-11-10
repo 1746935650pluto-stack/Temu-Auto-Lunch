@@ -310,21 +310,23 @@ async function loadEditorLogistics() {
     warehouses.filter((row) => row.site === site).forEach((row) => addSelectOption(warehouseSelect, row.warehouseId, row.warehouseName || String(row.warehouseId)));
     const saved = currentEditorRow();
     const configured = editorState.shopConfigs[shopId] || {};
-    const savedFreight = configured.freightId || (saved.siteFreightTemplateList || []).find((row) => row.site === site)?.freightTemplateId;
-    const savedWarehouse = configured.warehouseId || (saved.siteWarehouseList || []).find((row) => row.site === site)?.warehouseId;
+    const binding = response.bindings?.[site] || {};
+    const savedFreight = configured.freightId || binding.freightId || (saved.siteFreightTemplateList || []).find((row) => row.site === site)?.freightTemplateId;
+    const savedWarehouse = configured.warehouseId || binding.warehouseId || (saved.siteWarehouseList || []).find((row) => row.site === site)?.warehouseId;
     if (savedFreight && [...freightSelect.options].some((option) => option.value === String(savedFreight))) {
       freightSelect.value = String(savedFreight);
-    } else {
+    } else if (!binding.freightId) {
       const defaultFreight = [...freightSelect.options].find((option) => option.textContent.trim() === '通用');
       if (defaultFreight) freightSelect.value = defaultFreight.value;
     }
     if (savedWarehouse && [...warehouseSelect.options].some((option) => option.value === String(savedWarehouse))) {
       warehouseSelect.value = String(savedWarehouse);
-    } else {
+    } else if (!binding.warehouseId) {
       const defaultWarehouse = [...warehouseSelect.options].find((option) => option.textContent.trim() === '发货');
       if (defaultWarehouse) warehouseSelect.value = defaultWarehouse.value;
     }
     if (site === 'EU') editorError('欧盟站需要配置多个子站点仓库；目前请在妙手后台完成该站物流配置。');
+    else if ((binding.freightId && !freightSelect.value) || (binding.warehouseId && !warehouseSelect.value)) editorError('手动绑定的物流选项已失效，请重新选择或到接口设置更新绑定。');
     else editorError('');
     rememberCurrentShopConfig();
     renderEditorSkus();

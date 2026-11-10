@@ -822,7 +822,7 @@
     const items = [...state.pool.selected.values()].map(r => ({sourceAccountId:r.sourceAccountId,detailId:r.detailId}));
     const plan = await api('preview', {items, targets:chosenTargets($('sharedTargets')), targetMode:$('sharedMode').value,
       site:$('sharedSite').value, priceMode:$('sharedPriceMode').value, price:$('sharedPrice').value,
-      priceMultiplier:$('sharedMultiplier').value, editConcurrency:Number($('sharedConcurrency').value)});
+      priceMultiplier:$('sharedMultiplier').value, priceOffset:$('sharedOffset').value, editConcurrency:Number($('sharedConcurrency').value)});
     if (state.modal !== dialog) return;
     dialog.message.textContent = `将创建 ${plan.copyCount} 个副本、${plan.taskCount} 个保存任务，跳过 ${plan.skipped.length} 个商品／店铺组合。`;
     if (plan.copyCount) dialog.content.append(element('p', '确认后自动核对并补齐属性、复制到目标账号、认领店铺、编辑保存，完成后进入待发布队列。源商品不修改，不会自动发布；资料无法确认或创建结果不明时安全暂停。'));
@@ -1361,9 +1361,10 @@
     const targets=select('sharedTargets',[]);targets.multiple=true;targets.size=7;
     controls.append(field('保存方式',mode),button('人员店铺绑定／刷新归属',bindPeople),button('刷新账号与店铺',()=>config(true)),field('目标店铺（按住 Ctrl 多选）',targets),
       field('发布站点',select('sharedSite',[['US','美国站 (US)']])),
-      field('申报价方式',select('sharedPriceMode',[['floor','固定下限 X ～ X+20'],['source_multiplier','原始 SKU 价格倍数']])),
+      field('申报价方式',select('sharedPriceMode',[['floor','固定下限 X ～ X+20'],['source_multiplier','原始 SKU 价格倍数'],['source_add','原价格 + X']])),
       field('申报价下限 X',input('sharedPrice',preferences.price || $('automationSkuPrice')?.value || '160','number')),
       field('原价倍数',input('sharedMultiplier',$('automationPriceMultiplier')?.value || '1.5','number')),
+      field('加价 X（人民币）',input('sharedOffset',preferences.priceOffset ?? '0','number')),
       field('同时编辑任务数（全账号共享）',input('sharedConcurrency',$('automationEditConcurrency')?.value || '8','number')),
       button('预览分配并批量保存',preview,true),button('移出选中商品',async()=>{
         const items=[...state.pool.selected.values()].map(r=>({sourceAccountId:r.sourceAccountId,detailId:r.detailId}));
@@ -1379,6 +1380,14 @@
     const poolList=element('div','','shared-list');poolList.id='sharedPoolList';pool.append(poolTools,poolList);
     $('automation').append(pool);
     $('sharedPriceMode').value = $('automationPriceMode')?.value || 'floor';
+    $('sharedOffset').min = '0'; $('sharedOffset').max = '999999.99'; $('sharedOffset').step = '0.01';
+    function priceFields() {
+      for (const [kind, id] of [['floor','sharedPrice'],['source_multiplier','sharedMultiplier'],['source_add','sharedOffset']]) {
+        $(id).parentElement.hidden = $('sharedPriceMode').value !== kind;
+        $(id).disabled = $('sharedPriceMode').value !== kind;
+      }
+    }
+    $('sharedPriceMode').addEventListener('change', priceFields); priceFields();
     const tasks=element('section','','shared-root');tasks.id='sharedTasksRoot';tasks.append(element('h1','任务中心'),
       element('p','保存商品 → 处理问题 → 手动发布。所有账号统一查看，商品仍按目标账号独立处理。','shared-task-intro'));
     const tabs=element('div','','shared-task-tabs'); tabs.setAttribute('aria-label','按任务进度查看');
@@ -1423,7 +1432,7 @@
     // Retain the existing tiny settings record; no product lists or snapshots
     // are stored in the browser. Each request still sends explicit targets.
     for (const [shared, original] of [['sharedPrice','automationSkuPrice'],['sharedPriceMode','automationPriceMode'],
-      ['sharedMultiplier','automationPriceMultiplier'],['sharedConcurrency','automationEditConcurrency'],
+      ['sharedMultiplier','automationPriceMultiplier'],['sharedOffset','automationPriceOffset'],['sharedConcurrency','automationEditConcurrency'],
       ['sharedPublishInterval','publishQueuePublishInterval']]) {
       $(shared).addEventListener('change',()=>{$(original).value=$(shared).value;window.saveAutomationPreferences?.();});
     }

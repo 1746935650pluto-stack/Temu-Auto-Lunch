@@ -77,9 +77,9 @@ test('version label distinguishes loaded interface resources from the running ba
   const {context,document}=setup();const label=document.createNode('version');label.className='app-version';label.dataset.resourceVersion='1.2.149';
   vm.runInContext(source.slice(source.indexOf('function updateApplicationVersion('),source.indexOf('async function checkApiStatus()')),context);
   context.updateApplicationVersion({version:'1.2.142'});
-  assert.equal(label.textContent,'界面 V1.2.149 · 后台 V1.2.142 · 待安全更新');
+  assert.equal(label.textContent,'界面 V1.2.149\n后台 V1.2.142\n待安全更新');
   context.updateApplicationVersion({runtimeVersion:'1.2.149',resourceVersion:'1.2.149',pendingUpdate:false});
-  assert.equal(label.textContent,'界面 V1.2.149 · 后台 V1.2.149');
+  assert.equal(label.textContent,'界面 V1.2.149\n后台 V1.2.149');
   label.dataset.resourceVersion='1.2.146';
   context.updateApplicationVersion({runtimeVersion:'1.2.149',resourceVersion:'1.2.149',pendingUpdate:false});
   assert.match(label.textContent,/请刷新网页/);assert.equal(label.dataset.pendingUpdate,'false');

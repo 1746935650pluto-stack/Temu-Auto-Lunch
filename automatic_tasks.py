@@ -122,12 +122,15 @@ class AutomaticTasks:
             self.b._normalize_automation_price(price)
         elif pricing == 'source_multiplier':
             self.b._normalize_automation_price_multiplier(multiplier)
+        elif pricing == 'source_add':
+            self.b._normalize_automation_price_offset(body.get('priceOffset', ''))
         else:
             raise ValueError('申报价方式不正确')
         config = {'sourceAccountId': source, 'personKey': person, 'targetAccountId': account['id'],
                   'targetScope': account['scope'], 'shopId': positive(body.get('shopId')), 'site': site,
                   'count': count, 'publishInterval': interval, 'priceMode': pricing, 'price': price,
                   'priceMultiplier': multiplier, 'mode': mode, 'everyMinutes': every,
+                  'priceOffset': str(body.get('priceOffset', '0')),
                   'startAt': start if mode != 'now' else None,
                   'sourceScopes': {str(a['id']): a['scope'] for a in sources}}
         # Store display labels locally. Credentials are never exposed.
@@ -192,6 +195,7 @@ class AutomaticTasks:
         rows.sort(key=lambda r: (r['createdAt'], r['key']))
         selected = []
         request = {k: config[k] for k in ('site', 'priceMode', 'price', 'priceMultiplier')}
+        request['priceOffset'] = config.get('priceOffset', '0')
         request.update(targetMode='manual', editConcurrency=8,
                        targets=[{'targetAccountId': config['targetAccountId'], 'shopId': config['shopId']}])
         for offset in range(0, len(rows), 50):

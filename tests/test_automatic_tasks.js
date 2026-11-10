@@ -20,7 +20,7 @@ function setup() {
       append(child) { this.children.push(child); }, replaceChildren() { this.children = []; }};
   }
   const defaults = {autoTaskMode: 'now', autoTaskPriceMode: 'floor', autoTaskCount: '100', autoTaskPrice: '160',
-    autoTaskMultiplier: '1.5', autoTaskPublishInterval: '10', autoTaskEvery: '60'};
+    autoTaskMultiplier: '1.5', autoTaskOffset: '0', autoTaskPublishInterval: '10', autoTaskEvery: '60'};
   for (const [id, value] of Object.entries(defaults)) element(id).value = value;
   let number = 0;
   const document = {getElementById: element, createElement: tag => ({...element('new' + ++number), tag})};
@@ -39,6 +39,19 @@ async function opened() {
   return s;
 }
 const submit = s => s.element('autoTaskForm').listeners.submit({preventDefault() {}});
+
+test('original price plus X shows only the offset field and sends it with the scheduled task', async () => {
+  const s = await opened();
+  s.element('autoTaskPriceMode').value='source_add'; s.element('autoTaskPriceMode').listeners.change();
+  assert.equal(s.element('autoTaskOffsetField').hidden,false);
+  assert.equal(s.element('autoTaskOffset').disabled,false);
+  assert.equal(s.element('autoTaskPrice').disabled,true);
+  assert.equal(s.element('autoTaskMultiplier').disabled,true);
+  s.element('autoTaskOffset').value='8.25'; s.element('autoTaskConfirm').checked=true;
+  const pending=submit(s), body=JSON.parse(s.requests[2].init.body);
+  assert.equal(body.priceOffset,'8.25'); assert.equal(body.priceMode,'source_add');
+  s.requests[2].reject(Error('fixture offline')); await pending;
+});
 
 test('site selector gives a clear local prompt until a target shop is selected', async () => {
   const s = setup(); s.window.automaticTasks.open();

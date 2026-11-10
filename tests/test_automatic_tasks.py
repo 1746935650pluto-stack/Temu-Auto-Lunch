@@ -82,6 +82,27 @@ class AutomaticTaskTests(unittest.TestCase):
         self.assertEqual(self.auto.listing()['tasks'][0]['runs'][0]['state'], 'completed')
         self.auto.tick(); self.assertEqual(len(self.published), 2)
 
+    def test_source_add_schedule_keeps_offset_and_prepares_original_sku_prices(self):
+        self.create(priceMode='source_add', priceOffset='12.50')
+        self.auto.tick()
+        transfers = self.transfers()
+        self.assertEqual(len(transfers), 1)
+        payload = json.loads(transfers[0]['payload'])
+        self.assertEqual(payload['priceMode'], 'source_add')
+        self.assertEqual(payload['priceOffset'], '12.50')
+        expected = server._source_sku_price_add_declarations(self.remote[(1, 123)], '12.50')
+        self.service.prepare_transfer(transfers[0])
+        jobs = self.service.job_rows()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(server.automation_pool(1).get_job(jobs[0]['jobId'])['skuPrices'], expected)
+        self.assertEqual(self.published, [])
+
+    def test_source_add_schedule_rejects_invalid_offset_before_persistence(self):
+        for value in ('-1', '0.001', 'NaN', ''):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.create(priceMode='source_add', priceOffset=value)
+        self.assertEqual(self.auto.listing()['tasks'], [])
+
     def test_cross_account_tracks_new_jobs_and_correct_target(self):
         self.create(targetAccountId=2); self.auto.tick(); self.finish()
         self.assertEqual([r['accountId'] for r in self.published], [2])

@@ -123,6 +123,42 @@ class SharedAutomationTests(unittest.TestCase):
             rows = list(connection.execute('SELECT * FROM shared_transfers WHERE batch_id=?', (plan['previewId'],)))
         return plan, rows
 
+    def test_source_add_survives_restart_and_cross_account_copy(self):
+        source = self.remote[(1, 123)]
+        expected = {}
+        for index, (key, sku) in enumerate(source['skuMap'].items()):
+            sku['price'] = str(100 + index * 10)
+            expected[key] = f'{105 + index * 10}.25'
+        server.automation_pool(1).put_item(123, 'site', 0, source)
+        request = {**self.request_data(), 'priceMode': 'source_add', 'priceOffset': '5.25'}
+        plan = self.service.preview(request)
+        self.service.execute({'previewId': plan['previewId'], 'confirmation': 'SAVE_SHARED_AUTOMATION_BATCH'}, launch=False)
+        restarted = SharedAutomation(server)
+        self.addCleanup(restarted.close)
+        with restarted.db() as connection:
+            rows = list(connection.execute('SELECT * FROM shared_transfers WHERE batch_id=?', (plan['previewId'],)))
+        self.assertTrue(rows)
+        self.assertEqual(json.loads(rows[0]['payload'])['priceOffset'], '5.25')
+        for row in rows:
+            restarted.prepare_transfer(row)
+        jobs = restarted.job_rows()
+        self.assertEqual(len(jobs), 2)
+        for row in jobs:
+            job = server.automation_pool(row['accountId']).get_job(row['jobId'])
+            self.assertEqual(job['skuPrices'], expected)
+            self.assertFalse(job['publishAfterSave'])
+        self.assertTrue(all(sku['price'] in {'100', '110'} for sku in source['skuMap'].values()))
+
+    def test_source_add_preview_rejects_bad_source_before_creating_copy(self):
+        item = copy.deepcopy(self.remote[(1, 123)])
+        next(iter(item['skuMap'].values())).pop('price', None)
+        server.automation_pool(1).put_item(123, 'site', 0, item)
+        self.calls.clear()
+        with self.assertRaisesRegex(ValueError, '原始价格'):
+            self.service.preview({**self.request_data(), 'priceMode': 'source_add', 'priceOffset': '2'})
+        self.assertFalse(any(path == server.HALF_CREATE for _, path, _ in self.calls))
+        self.assertEqual(self.service.job_rows(), [])
+
     def test_copy_payload_removes_account_specific_references_and_keeps_product(self):
         raw = sample_item(); original = copy.deepcopy(raw)
         raw.update(subAppAccountId='11', shopIdAndGoodsModelReqMap={'1234': {'id': 9}}, collectShowSizeTemplateIds=[123],

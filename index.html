@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.199" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.200" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.199">当前版本 V1.2.199</span>
+          <span class="app-version" data-resource-version="1.2.200">当前版本 V1.2.200</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -317,7 +317,7 @@
             <div class="automation-head"><div><p class="eyebrow">AUTOMATION / STAGING POOL</p><h1>自动化池</h1><p>从采集箱入池；可多选商品并发同步到店铺、编辑和保存，保存后由你在任务中心统一发布。</p></div><button class="button subtle" id="refreshAutomationPool" type="button">刷新池子</button></div>
             <div class="automation-stage"><span class="automation-stage-number">01</span><div><strong>采集箱 → 自动化池</strong><p>已入池 <b id="automationPoolCount">0</b> 件商品，保存了妙手商品完整资料快照。</p></div></div>
             <div class="automation-claim-panel">
-              <div class="automation-stage-title"><span class="automation-stage-number">02</span><div><strong>确认店铺并批量编辑保存</strong><p>统一使用「通用」运费模板、「发货」仓库；AI 润色中英文标题，并根据原标题、类目和现有资料补全缺失必填属性，无法可靠识别的字段会提示补充资料。保留首图，其余图片打乱后最多取 9 张提交妙手，本地快照保留全部图片。申报价可按固定下限 X 到 X+20 元随机生成，或按本地快照中每个 SKU 的原始价格乘倍数计算（保留两位小数）；库存 1000。保存后会读回核对关键字段，确认一致才进入发布队列。商品会并发编辑并保存到妙手，随后停在任务中心等待你统一发布。</p></div></div>
+              <div class="automation-stage-title"><span class="automation-stage-number">02</span><div><strong>确认店铺并批量编辑保存</strong><p>优先使用接口设置中绑定的运费模板与仓库，未绑定时使用「通用」运费模板、「发货」仓库；AI 润色中英文标题，并根据原标题、类目和现有资料补全缺失必填属性，无法可靠识别的字段会提示补充资料。保留首图，其余图片打乱后最多取 9 张提交妙手，本地快照保留全部图片。申报价可按固定下限 X 到 X+20 元随机生成，或按本地快照中每个 SKU 的原始价格乘倍数、加 X 元计算（保留两位小数）；库存 1000。保存后会读回核对关键字段，确认一致才进入发布队列。商品会并发编辑并保存到妙手，随后停在任务中心等待你统一发布。</p></div></div>
               <div class="personnel-routing-controls">
                 <label>保存方式<select id="automationTargetMode"><option value="manual">手动选择店铺</option><option value="personnel">按所属人员绑定</option></select></label>
                 <button class="button subtle" id="automationPersonnelBindings" type="button">人员店铺绑定</button>
@@ -327,9 +327,10 @@
               <div class="automation-claim-controls">
                 <label>目标店铺（可多选）<select id="automationClaimShop" multiple size="5" aria-describedby="automationShopHint"><option value="" disabled>正在加载店铺…</option></select><small id="automationShopHint">按住 Ctrl 点击多选；每件商品保存到全部选中店铺</small></label>
                 <label>发布站点<select id="automationPublishSite"><option value="">正在加载站点…</option></select></label>
-                <label>申报价方式<select id="automationPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始价格 × 倍数</option></select></label>
+                <label>申报价方式<select id="automationPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始价格 × 倍数</option><option value="source_add">原价格 + X</option></select></label>
                 <label class="automation-price-label" id="automationPriceFloorLabel">SKU 申报价下限 X（人民币）<input id="automationSkuPrice" type="number" min="0.01" max="999980" step="0.01" value="160" inputmode="decimal" /></label>
                 <label class="automation-price-label" id="automationPriceMultiplierLabel" hidden>原始价格倍数<input id="automationPriceMultiplier" type="number" min="0.0001" max="1000" step="0.0001" value="1.5" inputmode="decimal" disabled /></label>
+                <label class="automation-price-label" id="automationPriceOffsetLabel" hidden>加价 X（人民币）<input id="automationPriceOffset" type="number" min="0" max="999999.99" step="0.01" value="0" inputmode="decimal" disabled /></label>
                 <label class="automation-concurrency-label">同时编辑任务数<input id="automationEditConcurrency" type="number" min="1" step="1" value="8" inputmode="numeric" /></label>
                 <span id="automationSelectedCount" class="automation-selected-count">未选商品</span>
                 <button class="button primary" id="automationClaimSubmit" type="button" disabled>确认并批量编辑保存</button>
@@ -368,9 +369,10 @@
               <label>执行方式<select id="autoTaskMode"><option value="now">立即执行</option><option value="once">指定时间执行一次</option><option value="interval">按间隔重复执行</option></select></label>
               <label id="autoTaskTimeField" hidden>开始时间（北京时间）<input id="autoTaskTime" type="datetime-local" /></label>
               <label id="autoTaskEveryField" hidden>重复间隔（分钟）<input id="autoTaskEvery" type="number" min="5" max="10080" step="1" value="60" /></label>
-              <label>申报价方式<select id="autoTaskPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始 SKU 价格倍数</option></select></label>
+              <label>申报价方式<select id="autoTaskPriceMode"><option value="floor">固定下限 X ～ X+20</option><option value="source_multiplier">原始 SKU 价格倍数</option><option value="source_add">原价格 + X</option></select></label>
               <label id="autoTaskPriceField">申报价下限 X<input id="autoTaskPrice" type="number" min="0.01" step="0.01" value="160" /></label>
               <label id="autoTaskMultiplierField" hidden>原始 SKU 价格倍数<input id="autoTaskMultiplier" type="number" min="0.01" step="0.01" value="1.5" /></label>
+              <label id="autoTaskOffsetField" hidden>加价 X（人民币）<input id="autoTaskOffset" type="number" min="0" max="999999.99" step="0.01" value="0" disabled /></label>
               <label>发布间隔（秒）<input id="autoTaskPublishInterval" type="number" min="1" max="600" step="1" value="1" required /></label>
             </div>
             <p class="auto-task-note">优先处理较早入池商品，跳过已有任务或发布记录的组合。可用数量不足时整轮不提交；编辑失败不擅自换商品补足。定时是启动时间，发布需等待编辑完成。电脑及后台需保持运行。</p>
@@ -632,30 +634,35 @@
           </div>
         </section>
         <section class="page" id="settings">
-          <div class="simple-page settings-page"><p class="eyebrow">INTEGRATIONS</p><h1>接口设置</h1><p>发布模式：TEMU 半托管。API 保存在本机 .env，可在这里管理采集箱入口。</p>
-            <section class="collection-account-manager" aria-labelledby="localDisplayCacheTitle">
-              <div class="collection-manager-heading"><h2 id="localDisplayCacheTitle">客户端与本地显示缓存</h2><button type="button" class="button subtle" id="clearLocalDisplayCache">清理显示缓存</button></div>
-              <p class="collection-manager-help">运行 start-workbench.cmd 可选择客户端或网页端，共用同一个后台和商品数据库。列表缓存只用于只读预览，最多 20 页、约 8 MB，保留 24 小时；操作始终核对后台最新记录。</p>
-              <p id="localDisplayCacheStatus" role="status">正在读取本机显示缓存…</p>
-            </section>
-            <section class="collection-account-manager" aria-labelledby="collectionAccountManagerTitle">
+          <div class="simple-page settings-page">
+            <header class="settings-heading">
+              <span class="settings-heading-icon" aria-hidden="true">⚙</span>
+              <div><h1>接口设置</h1><p>管理采集箱、AI 接口与核价规则</p></div>
+              <span class="settings-mode">TEMU 半托管</span>
+            </header>
+            <div class="settings-layout">
+            <section class="collection-account-manager settings-accounts" aria-labelledby="collectionAccountManagerTitle">
               <div class="collection-manager-heading"><h2 id="collectionAccountManagerTitle">采集箱管理</h2><button type="button" class="button subtle" id="refreshCollectionAccountManager">刷新列表</button></div>
               <p class="collection-manager-help">可为现有采集箱重命名，仅更新本机显示名称，不改变账号编号、API、商品或任务。删除前自动备份，再清除该箱的本机 API、入口、本地订单、自动化池和全部任务（含待发布）。不删除妙手商品、店铺或其他采集箱的订单任务。已删除编号不复用；默认采集箱 1 仅可重命名。</p>
               <div id="collectionAccountManager">正在读取采集箱…</div>
               <p id="collectionAccountManagerStatus" role="status" aria-live="polite"></p>
               <details id="removedCollectionAccounts" hidden><summary>查看已删除采集箱</summary><div id="removedCollectionAccountList"></div></details>
             </section>
-            <section class="collection-account-manager" aria-labelledby="deepSeekSettingsTitle">
-              <div class="collection-manager-heading"><h2 id="deepSeekSettingsTitle">DeepSeek API</h2><span id="deepSeekConfigured" class="status-pill neutral">正在检查</span></div>
-              <p class="collection-manager-help">用于标题润色及商品属性识别，所有采集箱共用。保存到本机 .env 后立即生效，不会自动调用 AI 或发布商品。</p>
-              <form id="deepSeekSettingsForm" autocomplete="off">
-                <label for="deepSeekApiKey">API Key<input id="deepSeekApiKey" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写 DeepSeek API Key；已保存的密钥不会回显" /></label>
-                <p id="deepSeekModel" class="collection-manager-help"></p>
-                <div class="deepseek-settings-actions"><button type="submit" class="button primary" id="saveDeepSeekSettings">保存 API 配置</button><button type="button" class="button subtle collection-manager-delete" id="removeDeepSeekSettings" disabled>删除 DeepSeek 配置</button><button type="button" class="button subtle" id="refreshDeepSeekSettings">刷新状态</button></div>
-              </form>
-              <p id="deepSeekSettingsStatus" role="status" aria-live="polite"></p>
-            </section>
-            <section class="collection-account-manager" aria-labelledby="deepSeekProfileManagerTitle">
+              <div class="settings-primary">
+                <section class="collection-account-manager settings-shipping" aria-labelledby="shippingBindingTitle">
+                  <div class="collection-manager-heading"><h2 id="shippingBindingTitle">运费模板与发货仓库</h2><button type="button" class="button subtle" id="refreshShippingBinding">重新读取</button></div>
+                  <p class="collection-manager-help">按账号、店铺和站点绑定，后续编辑保存优先使用。未绑定时自动匹配“通用”运费模板及“发货”仓库；保存配置不自动编辑或发布商品。</p>
+                  <form id="shippingBindingForm" class="shipping-binding-form">
+                    <label>账号<select id="shippingAccount" disabled></select></label>
+                    <label>店铺<select id="shippingShop" disabled></select></label>
+                    <label>站点<select id="shippingSite" disabled></select></label>
+                    <label>运费模板<select id="shippingFreight" disabled></select></label>
+                    <label>发货仓库<select id="shippingWarehouse" disabled></select></label>
+                    <div class="shipping-binding-actions"><button type="submit" class="button primary" id="saveShippingBinding" disabled>保存绑定</button><button type="button" class="button subtle" id="resetShippingBinding" disabled>恢复自动匹配</button></div>
+                  </form>
+                  <p id="shippingBindingStatus" role="status" aria-live="polite">请选择要绑定的账号、店铺与站点。</p>
+                </section>
+            <section class="collection-account-manager settings-profiles" aria-labelledby="deepSeekProfileManagerTitle">
               <div class="collection-manager-heading"><h2 id="deepSeekProfileManagerTitle">DeepSeek API 管理与妙手分配</h2><button type="button" class="button subtle" id="refreshDeepSeekProfiles">刷新列表</button></div>
               <p class="collection-manager-help">可保存多个命名 API Key，并为每个妙手采集箱指定使用的 API。未指定时继续使用上方的默认 API。密钥只保存在本机，列表不会回显；保存或分配不会自动调用 AI、编辑商品或发布。</p>
               <form id="deepSeekProfileForm" class="deepseek-profile-form" autocomplete="off">
@@ -667,7 +674,31 @@
               <div id="deepSeekAccountAssignments" class="deepseek-account-assignments" aria-live="polite"></div>
               <p id="deepSeekProfileStatus" role="status" aria-live="polite"></p>
             </section>
-            <section class="collection-account-manager" aria-labelledby="pricingConfigTitle">
+
+              </div>
+              <div class="settings-secondary">
+            <section class="collection-account-manager settings-default-api" aria-labelledby="deepSeekSettingsTitle">
+              <div class="collection-manager-heading"><h2 id="deepSeekSettingsTitle">DeepSeek API</h2><span id="deepSeekConfigured" class="status-pill neutral">正在检查</span></div>
+              <p class="collection-manager-help">未单独分配 API 的采集箱使用此默认接口。密钥保存在本机，保存后不会自动调用 AI 或发布商品。</p>
+              <form id="deepSeekSettingsForm" autocomplete="off">
+                <label for="deepSeekApiKey">API Key<input id="deepSeekApiKey" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="512" required placeholder="填写 DeepSeek API Key；已保存的密钥不会回显" /></label>
+                <p id="deepSeekModel" class="collection-manager-help"></p>
+                <div class="deepseek-settings-actions"><button type="submit" class="button primary" id="saveDeepSeekSettings">保存 API 配置</button><button type="button" class="button subtle collection-manager-delete" id="removeDeepSeekSettings" disabled>删除 DeepSeek 配置</button><button type="button" class="button subtle" id="refreshDeepSeekSettings">刷新状态</button></div>
+              </form>
+              <p id="deepSeekSettingsStatus" role="status" aria-live="polite"></p>
+            </section>
+                <section class="collection-account-manager settings-integrations" aria-labelledby="settingsIntegrationsTitle">
+                  <div class="collection-manager-heading"><h2 id="settingsIntegrationsTitle">连接状态</h2></div>
+            <div class="integration-card"><div class="integration-logo">MS</div><div><h3>妙手 ERP / API</h3><p id="miaoShouSettingsDescription">用于读取商品、SKU、图片、成本和货源信息。</p><div class="integration-actions"><button type="button" class="button subtle" id="refreshMiaoshouShops">重新拉取妙手店铺</button><span id="miaoshouShopRefreshStatus" role="status" aria-live="polite">不会同步商品或改动任务</span></div></div><span class="status-pill neutral" id="miaoShouSettingsStatus">待配置</span></div>
+            <div class="integration-card"><div class="integration-logo temu-logo">T</div><div><h3>妙手 TEMU 半托管上架</h3><p id="temuSettingsDescription">从妙手半托管采集箱读取商品，并通过妙手提交发布。</p></div><span class="status-pill neutral" id="temuSettingsStatus">正在检查</span></div>
+                </section>
+            <section class="collection-account-manager settings-cache" aria-labelledby="localDisplayCacheTitle">
+              <div class="collection-manager-heading"><h2 id="localDisplayCacheTitle">客户端与本地显示缓存</h2><button type="button" class="button subtle" id="clearLocalDisplayCache">清理显示缓存</button></div>
+              <p class="collection-manager-help">清理商品列表的本机预览缓存，不删除商品、订单或任务。客户端和网页端共用同一份业务数据。</p>
+              <p id="localDisplayCacheStatus" role="status">正在读取本机显示缓存…</p>
+            </section>
+              </div>
+            <section class="collection-account-manager settings-pricing" aria-labelledby="pricingConfigTitle">
               <div class="collection-manager-heading"><h2 id="pricingConfigTitle">核价工作台配置</h2><span id="pricingWorkbenchState" class="status-pill neutral" role="status" aria-live="polite">正在等待核价扩展</span></div>
               <p class="collection-manager-help">用于设置利润公式、成本和重量规则。配置只保存到浏览器核价扩展本地存储，不会发送到妙手、DeepSeek 或自动化队列。</p>
               <form id="pricingConfigForm" class="pricing-config-form" autocomplete="off">
@@ -686,9 +717,7 @@
               </form>
               <p id="pricingConfigStatus" role="status" aria-live="polite"></p>
             </section>
-            <div class="integration-card"><div class="integration-logo">MS</div><div><h3>妙手 ERP / API</h3><p id="miaoShouSettingsDescription">用于读取商品、SKU、图片、成本和货源信息。</p><div class="integration-actions"><button type="button" class="button subtle" id="refreshMiaoshouShops">重新拉取妙手店铺</button><span id="miaoshouShopRefreshStatus" role="status" aria-live="polite">不会同步商品或改动任务</span></div></div><span class="status-pill neutral" id="miaoShouSettingsStatus">待配置</span></div>
-            <div class="integration-card"><div class="integration-logo temu-logo">T</div><div><h3>妙手 TEMU 半托管上架</h3><p id="temuSettingsDescription">从妙手半托管采集箱读取商品，并通过妙手提交发布。</p></div><span class="status-pill neutral" id="temuSettingsStatus">正在检查</span></div>
-            <div class="code-note">工作台后端只调用妙手，可读取、新建、编辑半托管采集箱商品；发布仍需单独确认。</div>
+            </div>
           </div>
         </section>
       </main>
@@ -740,21 +769,22 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./data-statistics.js?v=1.2.199"></script>
-    <script src="./order-shop-chart.js?v=1.2.199"></script>
-    <script src="./navigation-state.js?v=1.2.199"></script>
-    <script src="./account-context.js?v=1.2.199"></script>
-  <script src="./local-view-cache.js?v=1.2.199"></script>
-  <script src="./live-status.js?v=1.2.199"></script>
+    <script src="./data-statistics.js?v=1.2.200"></script>
+    <script src="./order-shop-chart.js?v=1.2.200"></script>
+    <script src="./navigation-state.js?v=1.2.200"></script>
+    <script src="./account-context.js?v=1.2.200"></script>
+  <script src="./local-view-cache.js?v=1.2.200"></script>
+  <script src="./live-status.js?v=1.2.200"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.199"></script>
-  <script src="./shared-automation.js?v=1.2.199"></script>
-  <script src="./pricing-workbench.js?v=1.2.199"></script>
-  <script src="./app.js?v=1.2.199"></script>
+  <script src="./diagnostics-panel.js?v=1.2.200"></script>
+  <script src="./shared-automation.js?v=1.2.200"></script>
+  <script src="./pricing-workbench.js?v=1.2.200"></script>
+  <script src="./shipping-bindings.js?v=1.2.200"></script>
+  <script src="./app.js?v=1.2.200"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
-    <script src="./automatic-tasks.js?v=1.2.173"></script>
-    <script src="./desktop-ui.js?v=1.2.199"></script>
-    <script src="./live-editor.js?v=1.2.199"></script>
+    <script src="./automatic-tasks.js?v=1.2.200"></script>
+    <script src="./desktop-ui.js?v=1.2.200"></script>
+    <script src="./live-editor.js?v=1.2.200"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

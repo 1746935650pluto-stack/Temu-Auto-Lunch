@@ -5,11 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 
-function setup(concurrency, priceMode='floor', priceMultiplier='1.5') {
+function setup(concurrency, priceMode='floor', priceMultiplier='1.5', priceOffset='0') {
   const fields = {
     '#automationClaimShop':{value:'123',selectedOptions:[{value:'123',textContent:'店铺'}, {value:'456',textContent:'店铺二'}]},
     '#automationPublishSite':{value:'US'}, '#automationSkuPrice':{value:'160.56'},
     '#automationPriceMode':{value:priceMode}, '#automationPriceMultiplier':{value:priceMultiplier},
+    '#automationPriceOffset':{value:priceOffset},
     '#automationEditConcurrency':{value:String(concurrency)},
   };
   const requests=[], messages=[];
@@ -54,5 +55,17 @@ test('invalid concurrency is rejected before any task request',async()=>{
     await ctx.claimAutomationSelection();
     assert.equal(requests.length,0);
     assert.ok(messages[0].includes('大于 0 的整数'));
+  }
+});
+
+test('original price plus X submits the amount and rejects invalid amounts before requesting tasks',async()=>{
+  const {ctx,requests,messages}=setup(8,'source_add','1.5','12.50');
+  await ctx.claimAutomationSelection();
+  assert.equal(requests[0].body.priceMode,'source_add');
+  assert.equal(requests[0].body.priceOffset,'12.50');
+  assert.ok(messages[0].includes('+ 12.50 元'));
+  for(const value of ['', '-1', '1.001', 'Infinity', '1000000']) {
+    const s=setup(8,'source_add','1.5',value); await s.ctx.claimAutomationSelection();
+    assert.equal(s.requests.length,0);
   }
 });

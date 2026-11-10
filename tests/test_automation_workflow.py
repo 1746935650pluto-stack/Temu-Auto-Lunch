@@ -23,6 +23,14 @@ class FakeAI:
 
 
 class AutomationWorkflowTests(unittest.TestCase):
+    def test_manually_bound_nondefault_logistics_reaches_verified_save(self):
+        original = server.automation_logistic_rows
+        def rows(*args, **kwargs):
+            result = original(*args, **kwargs)
+            return [{**row, 'templateName': '指定运费', 'warehouseName': '指定仓库'} for row in result]
+        with patch.object(server, 'bound_logistics', return_value={'freightId': '11', 'warehouseId': '22'}), patch.object(server, 'automation_logistic_rows', side_effect=rows):
+            self.test_one_item_flow_records_each_submission_and_keeps_first_image()
+
     def test_incomplete_size_chart_stops_before_ai_or_save(self):
         from unittest.mock import Mock
         self.source['collectBoxDetailShopList'] = [{'shopId': 1234}]

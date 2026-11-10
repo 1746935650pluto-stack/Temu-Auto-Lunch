@@ -27,6 +27,8 @@
     $('autoTaskPriceField').hidden = pricing !== 'floor'; $('autoTaskMultiplierField').hidden = pricing !== 'source_multiplier';
     $('autoTaskPrice').disabled = pricing !== 'floor'; $('autoTaskPrice').required = pricing === 'floor';
     $('autoTaskMultiplier').disabled = pricing !== 'source_multiplier'; $('autoTaskMultiplier').required = pricing === 'source_multiplier';
+    $('autoTaskOffsetField').hidden = pricing !== 'source_add';
+    $('autoTaskOffset').disabled = pricing !== 'source_add'; $('autoTaskOffset').required = pricing === 'source_add';
     $('autoTaskSubmit').textContent = submitting ? '正在提交…' : mode === 'now' ? '立即执行：编辑并发布' : '创建定时编辑发布任务';
     $('autoTaskSubmit').disabled = submitting || !optionsReady || !$('autoTaskConfirm').checked;
   }
@@ -96,6 +98,7 @@
       mode, startAt: mode === 'now' ? null : Date.parse($('autoTaskTime').value + ':00+08:00') / 1000,
       everyMinutes: mode === 'interval' ? Number($('autoTaskEvery').value) : 60, priceMode: $('autoTaskPriceMode').value,
       price: $('autoTaskPrice').value, priceMultiplier: $('autoTaskMultiplier').value,
+      priceOffset: $('autoTaskOffset').value,
       publishInterval: Number($('autoTaskPublishInterval').value), confirmation: 'AUTOMATIC_EDIT_AND_PUBLISH'};
   }
   async function submit(event) {

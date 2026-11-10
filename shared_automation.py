@@ -814,6 +814,8 @@ class SharedAutomation:
             self.b._normalize_automation_price(body.get('price', '160'))
         elif price_mode == 'source_multiplier':
             self.b._normalize_automation_price_multiplier(body.get('priceMultiplier', '1.5'))
+        elif price_mode == 'source_add':
+            self.b._normalize_automation_price_offset(body.get('priceOffset', ''))
         else:
             raise ValueError('申报价方式不正确')
         jobs, copies, resolve_person = context['jobs'], context['copies'], context['resolve']
@@ -827,6 +829,8 @@ class SharedAutomation:
             staged = self.b.automation_pool(source['id']).get_item(ref['detailId'])
             if not staged:
                 raise ValueError(f"采集箱 {source['id']} 商品 {ref['detailId']} 不在池中")
+            if price_mode == 'source_add':
+                self.b._source_sku_price_add_declarations(staged['item'], body['priceOffset'])
             if any(c['target_account'] == source['id'] and c['target_scope'] == source['scope']
                    and c['target_id'] == ref['detailId'] for c in copies):
                 raise ValueError('该商品是共享池已管理的目标副本，请选择原商品')
@@ -885,6 +889,7 @@ class SharedAutomation:
                     'title': staged['title'], 'sourceVersion': staged['version'], 'site': site,
                     'priceMode': price_mode, 'price': body.get('price', '160'),
                     'priceMultiplier': body.get('priceMultiplier', '1.5'),
+                    'priceOffset': body.get('priceOffset', '0'),
                     'needsCopy': source['id'] != target_id and not (copy and copy['target_id'])})
         plan = {'transfers': transfers, 'skipped': skipped, 'copyCount': sum(r['needsCopy'] for r in transfers),
                 'taskCount': sum(len(r['shopIds']) for r in transfers), 'editConcurrency': concurrency}
@@ -988,10 +993,11 @@ class SharedAutomation:
             shop_id = row['shopId']
             def read(path, payload):
                 return self.b.miao_request(lambda: worker._vendor(path, payload), transfer['targetAccountId'])
-            freight_id = self.b.automation_default_logistic_id(
-                self.b.automation_logistic_rows(read, 'freight', shop_id, site), 'freight')
-            warehouse_id = self.b.automation_default_logistic_id(
-                self.b.automation_logistic_rows(read, 'warehouse', shop_id, site), 'warehouse')
+            binding = self.b.bound_logistics(transfer['targetAccountId'], shop_id, site)
+            freight_id = self.b.automation_bound_logistic_id(
+                self.b.automation_logistic_rows(read, 'freight', shop_id, site, binding.get('freightId', '')), 'freight', binding)
+            warehouse_id = self.b.automation_bound_logistic_id(
+                self.b.automation_logistic_rows(read, 'warehouse', shop_id, site, binding.get('warehouseId', '')), 'warehouse', binding)
             if not freight_id or not warehouse_id:
                 raise ValueError(f'目标店铺 {shop_id} 的 {site} 站缺少唯一的“通用”运费模板或默认仓库（“发货”优先、其次“通用”），未创建副本')
             row['siteFreightTemplateList'] = [{'site': site, 'shopId': str(shop_id), 'freightTemplateId': freight_id}]
@@ -1217,12 +1223,17 @@ class SharedAutomation:
         if shops:
             staged = pool.get_item(target_id)
             prices = {}
-            if transfer['priceMode'] == 'source_multiplier':
+            if transfer['priceMode'] in {'source_multiplier', 'source_add'}:
                 source = self.b.automation_pool(transfer['sourceAccountId']).get_item(transfer['detailId'])
-                prices = self.b._source_sku_price_multiplier_declarations(source['item'],
-                    self.b._normalize_automation_price_multiplier(transfer['priceMultiplier']))
+                if not source:
+                    raise ValueError('源商品快照缺失，不能根据原始价格计算申报价')
+                if transfer['priceMode'] == 'source_add':
+                    prices = self.b._source_sku_price_add_declarations(source['item'], transfer['priceOffset'])
+                else:
+                    prices = self.b._source_sku_price_multiplier_declarations(source['item'],
+                        self.b._normalize_automation_price_multiplier(transfer['priceMultiplier']))
                 if set(prices) != set(staged['item'].get('skuMap', {})):
-                    raise ValueError('目标副本 SKU 与源商品不一致，不能套用原价倍数，请人工核查')
+                    raise ValueError('目标副本 SKU 与源商品不一致，不能套用原始价格，请人工核查')
                 price = next(iter(prices.values()))
             else:
                 price = self.b._randomize_automation_price(self.b._normalize_automation_price(transfer['price']))

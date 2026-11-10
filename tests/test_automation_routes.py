@@ -555,6 +555,37 @@ class AutomationRouteTests(unittest.TestCase):
             self.assertEqual(result['data']['jobs'][0]['skuPrices'], {'first': '150.00'})
             worker.return_value.start.assert_called_once()
 
+    def test_source_add_uses_each_original_sku_and_decimal_rounding(self):
+        calculate = server._source_sku_price_add_declarations
+        item = {'skuMap': {'a': {'price': '100'}, 'b': {'price': '88.505'}}}
+        self.assertEqual(calculate(item, '5.25'), {'a': '105.25', 'b': '93.76'})
+        self.assertEqual(calculate(item, '0'), {'a': '100.00', 'b': '88.51'})
+        self.assertEqual(item['skuMap']['a']['price'], '100')
+        for amount in ('', '-1', 'NaN', 'Infinity', '1.001', '1000000'):
+            with self.subTest(amount=amount), self.assertRaises(ValueError):
+                calculate(item, amount)
+        for raw in ({}, {'skuMap': {}}, {'skuMap': {'a': {}}},
+                    {'skuMap': {'a': {'price': '0'}}}, {'skuMap': {'a': {'price': '1e1000'}}},
+                    {'skuMap': {'a': {'price': '999999.99'}}}):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                calculate(raw, '5')
+
+    def test_source_add_batch_queues_all_sku_prices_and_rejects_incomplete_sources(self):
+        payload = {'detailIds': [123], 'shopId': 456, 'site': 'US',
+                   'priceMode': 'source_add', 'priceOffset': '5.25',
+                   'confirmation': 'AUTOMATE_AND_SAVE_BATCH'}
+        server.AUTOMATION_POOL.put_item(123, 'site', 0, {
+            'title': 'fixture', 'skuMap': {'a': {'price': '100'}, 'b': {'price': '88.50'}}})
+        with patch.dict(os.environ, {'APP_MODE': 'live'}), patch.object(server, 'Thread'):
+            status, result = self.request('POST', '/api/automation/batch-run', payload)
+            self.assertEqual(status, 202, result)
+            self.assertEqual(result['data']['jobs'][0]['skuPrices'], {'a': '105.25', 'b': '93.75'})
+            server.AUTOMATION_POOL.put_item(124, 'site', 0, {'title': 'missing', 'skuMap': {'a': {}}})
+            before = len(server.AUTOMATION_POOL.list_jobs())
+            status, _ = self.request('POST', '/api/automation/batch-run', {**payload, 'detailIds': [124]})
+            self.assertEqual(status, 400)
+            self.assertEqual(len(server.AUTOMATION_POOL.list_jobs()), before)
+
     def test_batch_removal_only_changes_local_pool(self):
         for detail_id in (123, 124):
             server.AUTOMATION_POOL.put_item(detail_id, 'site', 0, {'title': f'测试商品 {detail_id}'})
