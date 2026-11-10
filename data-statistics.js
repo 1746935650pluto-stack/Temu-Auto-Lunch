@@ -2,9 +2,8 @@
   'use strict';
   const el = id => document.getElementById(id);
   const metrics = ['collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed', 'needsInput', 'orders', 'packages', 'quantity'];
-  const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数', '订单金额'];
+  const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
   let revision = 0, current = null, requestController = null;
-  const money = amounts => Object.entries(amounts || {}).map(([currency, value]) => `${currency} ${value}`).join(' / ') || '—';
   function beijingDate(offset = 0) {
     return new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
   }
@@ -32,18 +31,17 @@
     accountsChanged(data.accounts);
     const cards = [['采集入池', data.totals.collected], ['保存成功', data.totals.saved],
       ['发布已提交', data.totals.submitted], ['编辑／发布异常', data.totals.editFailed + data.totals.publishFailed],
-      ['订单数', data.totals.orders], ['订单金额', money(data.totals.amounts)]];
+      ['订单数', data.totals.orders]];
     el('statisticsCards').replaceChildren(...cards.map(([label, value]) => {
       const card = document.createElement('div'), title = document.createElement('span'), number = document.createElement('strong');
       title.textContent = label; number.textContent = String(value); card.append(title, number); return card;
     }));
     el('statisticsRows').replaceChildren(...data.rows.map(row => {
       const tr = document.createElement('tr');
-      const values = [row.date, row.accountName, ...metrics.map(key => row[key]), money(row.amounts)];
+      const values = [row.date, row.accountName, ...metrics.map(key => row[key])];
       values.forEach((value, index) => {
         const td = document.createElement('td'); td.textContent = String(value);
         if (index === 11 && row.quantityMissing) td.textContent = `${row.quantity}（${row.quantityMissing} 包裹缺失）`;
-        if (index === 12 && row.amountMissing) td.textContent += `（${row.amountMissing} 单缺失）`;
         if (index === 9) {
           const button = document.createElement('button'); button.type = 'button'; button.className = 'statistics-order-link';
           button.textContent = String(value); button.title = `查看${row.accountName}订单明细`;
@@ -55,7 +53,6 @@
     }));
     const missing = [];
     if (data.totals.quantityMissing) missing.push(`${data.totals.quantityMissing} 个包裹缺少件数`);
-    if (data.totals.amountMissing) missing.push(`${data.totals.amountMissing} 笔订单缺少有效金额或币种`);
     const syncTimes = Object.values(data.lastOrderSync || {}).sort();
     const sync = syncTimes.length ? `；订单最近同步 ${new Date(syncTimes.at(-1)).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hour12: false})}` : '；订单尚无本地同步记录';
     el('statisticsStatus').textContent = `${data.start} 至 ${data.end} · ${data.rows.length} 条每日账号记录${sync}。${[...data.warnings, ...missing].join('；')}`;
@@ -103,7 +100,7 @@
     el('statisticsOrdersTab').addEventListener('click', () => openOrderAccount(activeOrderAccountId));
     el('statisticsExport').addEventListener('click', () => {
       if (!current) return;
-      const data = [[...headings, '缺少件数的包裹数', '缺少金额的订单数'], ...current.rows.map(row => [row.date, row.accountName, ...metrics.map(key => row[key]), money(row.amounts), row.quantityMissing, row.amountMissing])];
+      const data = [[...headings, '缺少件数的包裹数'], ...current.rows.map(row => [row.date, row.accountName, ...metrics.map(key => row[key]), row.quantityMissing])];
       const url = URL.createObjectURL(new Blob(['\ufeff' + data.map(row => row.map(csvCell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'}));
       const link = document.createElement('a'); link.href = url; link.download = `妙手每日统计_${current.start}_${current.end}.csv`; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);

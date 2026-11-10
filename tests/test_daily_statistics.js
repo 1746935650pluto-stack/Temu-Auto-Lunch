@@ -16,8 +16,8 @@ function setup() {
   return {...context, requests, opened, el: id => document.getElementById(id)};
 }
 const result = name => ({start:'2026-11-09',end:'2026-11-09',accounts:[{id:1,name}],rows:[{
-  date:'2026-11-09',accountId:1,accountName:name,collected:3,tasks:2,saved:1,submitted:1,editFailed:0,publishFailed:0,needsInput:0,orders:4,packages:5,quantity:6,amounts:{USD:'12.30'}}],
-  totals:{collected:3,saved:1,submitted:1,editFailed:0,publishFailed:0,orders:4,amounts:{USD:'12.30'}},warnings:[]});
+  date:'2026-11-09',accountId:1,accountName:name,collected:3,tasks:2,saved:1,submitted:1,editFailed:0,publishFailed:0,needsInput:0,orders:4,packages:5,quantity:6,amounts:{USD:'12.30'},amountMissing:2}],
+  totals:{collected:3,saved:1,submitted:1,editFailed:0,publishFailed:0,orders:4,amounts:{USD:'12.30'},amountMissing:2},warnings:[]});
 test('late responses cannot overwrite newer account filters', async () => {
   const s = setup(); const first = s.window.dataStatistics.open(); const second = s.window.dataStatistics.open();
   s.requests[1].resolve({ok:true,json:async()=>({data:result('new')})}); await second;
@@ -31,6 +31,9 @@ test('render escapes account names and opens matching order account', async () =
   assert.equal(s.el('statisticsRows').children[0].children[1].children.length,0);
   await s.el('statisticsRows').children[0].children[9].children[0].dispatch('click');
   assert.deepEqual(s.opened,[1]); assert.equal(s.el('statisticsExport').disabled,false);
+  assert.equal(s.el('statisticsRows').children[0].children.length,12);
+  assert.equal(s.el('statisticsCards').children.length,5);
+  assert.doesNotMatch(s.el('statisticsCards').textContent+s.el('statisticsStatus').textContent,/金额|币种|USD/);
 });
 test('filter changes clear old data and disable stale exports', async () => {
   const s = setup(); const pending = s.window.dataStatistics.open();
