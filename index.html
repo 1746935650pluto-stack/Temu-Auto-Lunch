@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.195" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.196" />
   </head>
   <body>
     <div class="app-shell">
@@ -38,7 +38,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.195">当前版本 V1.2.195</span>
+          <span class="app-version" data-resource-version="1.2.196">当前版本 V1.2.196</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -436,29 +436,37 @@
             <div id="publishRecordsList" class="publish-record-list"><p class="live-empty">正在读取发布记录…</p></div>
           </div>
         </section>
-        <div class="statistics-tabs" id="statisticsTabs" role="tablist" aria-label="数据统计" hidden>
-          <button type="button" class="button primary" id="statisticsDailyTab" role="tab" aria-selected="true" aria-controls="dataStatistics">每日统计</button>
-          <button type="button" class="button subtle" id="statisticsOrdersTab" role="tab" aria-selected="false" aria-controls="orders">订单明细</button>
+        <div class="statistics-module-header" id="statisticsTabs" hidden>
+          <div class="statistics-module-brand"><span class="statistics-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10m8 10V4m8 16v-7" stroke-linecap="round"/></svg></span><div><h1>数据统计</h1><p>账号表现与订单记录</p></div></div>
+          <div class="statistics-tabs" role="tablist" aria-label="数据统计">
+            <button type="button" class="button primary" id="statisticsDailyTab" role="tab" aria-selected="true" aria-controls="dataStatistics">每日统计</button>
+            <button type="button" class="button subtle" id="statisticsOrdersTab" role="tab" aria-selected="false" aria-controls="orders">订单明细</button>
+          </div>
         </div>
         <section class="page" id="dataStatistics" aria-label="每日数据统计">
-          <div class="statistics-head"><div><p class="eyebrow">DAILY ACCOUNT REPORT</p><h1>数据统计</h1><p>每天每个妙手账号的采集入池、编辑、发布和订单数据 · 北京时间</p></div><button type="button" class="button subtle" id="statisticsExport" disabled>导出 CSV</button></div>
           <form class="statistics-filters" id="statisticsFilters">
-            <label>开始日期<input type="date" id="statisticsStart" required /></label><label>结束日期<input type="date" id="statisticsEnd" required /></label>
-            <label>妙手账号<select id="statisticsAccount"><option value="all">全部账号</option></select></label>
-            <button class="button primary" type="submit">查询统计</button><button class="button subtle" type="button" id="statisticsToday">今天</button><button class="button subtle" type="button" id="statisticsWeek">近 7 天</button>
+            <div class="statistics-date-range"><label>开始日期<input type="date" id="statisticsStart" required /></label><span class="statistics-date-separator" aria-hidden="true">—</span><label>结束日期<input type="date" id="statisticsEnd" required /></label></div>
+            <div class="statistics-quick-ranges" role="group" aria-label="快捷日期"><button class="button subtle" type="button" id="statisticsToday">今天</button><button class="button subtle" type="button" id="statisticsWeek">近 7 天</button></div>
+            <label class="statistics-account-filter">妙手账号<select id="statisticsAccount"><option value="all">全部账号</option></select></label>
+            <button class="button primary statistics-query" type="submit">查询统计</button>
+            <button type="button" class="button subtle statistics-export" id="statisticsExport" disabled><span aria-hidden="true">↓</span> 导出 CSV</button>
           </form>
-          <p id="statisticsStatus" role="status" aria-live="polite">选择日期后查询，每次最多 93 天。</p>
+          <p id="statisticsStatus" role="status" aria-live="polite">选择日期和账号后查询统计。</p>
           <div class="statistics-cards" id="statisticsCards"></div>
-          <div class="statistics-chart-tools">
-            <label>统计指标<select id="statisticsMetric"><option value="orders">订单数</option><option value="collected">采集入池</option><option value="tasks">新建任务</option><option value="saved">保存成功</option><option value="submitted">发布已提交</option><option value="editFailed">编辑异常</option><option value="publishFailed">发布异常</option><option value="needsInput">待选择</option><option value="packages">包裹数</option><option value="quantity">已知件数</option></select></label>
-            <div class="statistics-view-switch" role="group" aria-label="统计展示方式"><button class="button primary" id="statisticsChartView" type="button" aria-pressed="true" aria-controls="statisticsChartPanel">柱状图</button><button class="button subtle" id="statisticsTableView" type="button" aria-pressed="false" aria-controls="statisticsTable">明细表</button></div>
-          </div>
-          <section class="statistics-chart-panel" id="statisticsChartPanel" aria-labelledby="statisticsChartTitle">
-            <h2 id="statisticsChartTitle">订单数 · 每日账号对比</h2><div class="statistics-chart-legend" id="statisticsChartLegend"></div>
-            <div class="statistics-plot-scroll" id="statisticsChartPlot" tabindex="0" aria-label="每日柱状图，可横向滚动"></div>
-            <p id="statisticsChartHint" role="status" aria-live="polite">查询统计后显示柱状图。</p>
-          </section>
+          <section class="statistics-data-panel" aria-label="账号数据展示">
+            <div class="statistics-chart-tools">
+              <div class="statistics-chart-heading"><h2 id="statisticsChartTitle">订单数趋势</h2><p id="statisticsChartCaption">每天每个账号的数据表现</p></div>
+              <div class="statistics-chart-controls"><label><span class="statistics-metric-caption">统计指标</span><select id="statisticsMetric"><option value="orders">订单数</option><option value="collected">采集入池</option><option value="tasks">新建任务</option><option value="saved">保存成功</option><option value="submitted">发布已提交</option><option value="editFailed">编辑异常</option><option value="publishFailed">发布异常</option><option value="needsInput">待选择</option><option value="packages">包裹数</option><option value="quantity">已知件数</option></select></label>
+                <div class="statistics-view-switch" role="group" aria-label="统计展示方式"><button class="button primary" id="statisticsChartView" type="button" aria-pressed="true" aria-controls="statisticsChartPanel">柱状图</button><button class="button subtle" id="statisticsTableView" type="button" aria-pressed="false" aria-controls="statisticsTable">明细表</button></div>
+              </div>
+            </div>
+            <div class="statistics-chart-panel" id="statisticsChartPanel" aria-labelledby="statisticsChartTitle">
+              <div class="statistics-chart-legend" id="statisticsChartLegend"></div>
+              <div class="statistics-plot-scroll" id="statisticsChartPlot" tabindex="0" aria-label="每日柱状图，可横向滚动"></div>
+              <div class="statistics-chart-footer"><span class="statistics-timezone">北京时间</span><p id="statisticsChartHint" role="status" aria-live="polite">查询统计后显示柱状图。</p></div>
+            </div>
           <div class="statistics-table-wrap" id="statisticsTable" hidden tabindex="0" aria-label="每日账号数据，可横向滚动"><table class="statistics-table"><thead><tr><th>日期</th><th>妙手账号</th><th>采集入池</th><th>新建任务</th><th>保存成功</th><th>发布已提交</th><th>编辑异常</th><th>发布异常</th><th>待选择</th><th>订单数</th><th>包裹数</th><th>已知件数</th></tr></thead><tbody id="statisticsRows"></tbody></table></div>
+          </section>
           <details class="statistics-notes"><summary>统计口径与数据完整性</summary><p>采集入池按本机首次入池日期计商品；任务按创建日期计。保存成功、发布已提交按事件发生日期计，同一任务同一天同一指标去重；重试后成功与之前的异常可以同时存在。发布已提交表示妙手接受请求，最终上架结果请查看发布记录。</p><p>订单按实际下单日期、账号＋店铺＋订单号去重，拆分包裹只计一单。未提供件数的包裹会注明缺失。</p><p>统计覆盖本机现存入池和任务历史，以及本版本起保留的订单历史。此前已被替换或清理的记录无法补回。查询仅读取本地数据；新订单请到订单明细同步，统计缓存最多 15 秒。</p></details>
         </section>
         <section class="page" id="orders">
@@ -719,19 +727,19 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./data-statistics.js?v=1.2.195"></script>
-    <script src="./account-context.js?v=1.2.195"></script>
-  <script src="./local-view-cache.js?v=1.2.195"></script>
-  <script src="./live-status.js?v=1.2.195"></script>
+    <script src="./data-statistics.js?v=1.2.196"></script>
+    <script src="./account-context.js?v=1.2.196"></script>
+  <script src="./local-view-cache.js?v=1.2.196"></script>
+  <script src="./live-status.js?v=1.2.196"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.195"></script>
-  <script src="./shared-automation.js?v=1.2.195"></script>
-  <script src="./pricing-workbench.js?v=1.2.195"></script>
-  <script src="./app.js?v=1.2.195"></script>
+  <script src="./diagnostics-panel.js?v=1.2.196"></script>
+  <script src="./shared-automation.js?v=1.2.196"></script>
+  <script src="./pricing-workbench.js?v=1.2.196"></script>
+  <script src="./app.js?v=1.2.196"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
     <script src="./automatic-tasks.js?v=1.2.173"></script>
-    <script src="./desktop-ui.js?v=1.2.195"></script>
-    <script src="./live-editor.js?v=1.2.195"></script>
+    <script src="./desktop-ui.js?v=1.2.196"></script>
+    <script src="./live-editor.js?v=1.2.196"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

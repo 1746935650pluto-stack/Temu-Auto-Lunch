@@ -123,7 +123,7 @@ try {
         Start-Sleep -Milliseconds 500
         try {
             $taskHealth = Invoke-RestMethod "$taskUrl/api/health" -TimeoutSec 1
-            if ($taskHealth.version -eq '1.2.195' -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
+            if ($taskHealth.version -eq '1.2.196' -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
                 $taskVerified = $true
                 break
             }
@@ -131,7 +131,7 @@ try {
         if ($taskStarted.HasExited) { break }
     }
     if (-not $taskVerified) { throw "Startup could not be verified in APP_MODE=$taskAppMode. Check .env and run: py -3 server.py" }
-    Write-Host "Backend 1.2.195 is ready in APP_MODE=$taskAppMode. Paused queues survive a controlled restart and resume on request." -ForegroundColor Green
+    Write-Host "Backend 1.2.196 is ready in APP_MODE=$taskAppMode. Paused queues survive a controlled restart and resume on request." -ForegroundColor Green
     exit 0
 } catch {
     if ($_.Exception.Message -match '拒绝访问|Access is denied') {

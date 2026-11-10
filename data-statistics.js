@@ -15,6 +15,7 @@
     el('statisticsChartPanel').hidden = table;
     el('statisticsMetric').disabled = table;
     if (!table && current) renderChart();
+    if (table) el('statisticsChartTitle').textContent = '每日账号明细';
     [['statisticsChartView', !table], ['statisticsTableView', table]].forEach(([id, selected]) => {
       el(id).className = `button ${selected ? 'primary' : 'subtle'}`;
       el(id).setAttribute('aria-pressed', String(selected));
@@ -22,18 +23,21 @@
   }
   function renderChart() {
     const metric = el('statisticsMetric').value || 'orders', label = metricLabels[metric] || metricLabels.orders;
-    el('statisticsChartTitle').textContent = `${label} · 每日账号对比`;
+    el('statisticsChartTitle').textContent = el('statisticsTable').hidden ? `${label}趋势` : '每日账号明细';
     if (!current?.rows.length) { clearChart('当前筛选没有可展示的每日数据。'); return; }
     const dates = [...new Set(current.rows.map(row => row.date))].sort();
     const accounts = [...new Map(current.rows.map(row => [row.accountId, {id: row.accountId, name: row.accountName}])).values()].sort((a, b) => a.id - b.id);
+    const singleDay = dates.length === 1;
+    if (el('statisticsTable').hidden && singleDay) el('statisticsChartTitle').textContent = `${label}对比`;
+    el('statisticsChartCaption').textContent = `${current.start} — ${current.end} · ${accounts.length} 个账号`;
     const values = new Map(current.rows.map(row => { const value = Number(row[metric]); return [`${row.date}:${row.accountId}`, Number.isFinite(value) ? Math.max(0, value) : 0]; }));
     const maximum = Math.max(0, ...values.values());
     const power = 10 ** Math.floor(Math.log10(Math.max(1, maximum / 4)));
     const step = Math.max(1, [1, 2, 5, 10].find(n => n * power >= maximum / 4) * power);
     const ceiling = Math.max(4, Math.ceil(maximum / step) * step);
-    const groupWidth = Math.max(90, accounts.length * 22 + 20);
-    const width = Math.max(760, el('statisticsChartPlot').clientWidth || 0, dates.length * groupWidth + 82), plotWidth = width - 82;
-    const groupSpace = plotWidth / dates.length, barSpace = Math.min(32, (groupSpace - 20) / accounts.length);
+    const groupWidth = Math.max(72, accounts.length * 12 + 18);
+    const width = Math.max(640, el('statisticsChartPlot').clientWidth || 0, dates.length * groupWidth + 82), plotWidth = width - 82;
+    const groupSpace = plotWidth / dates.length, barSpace = singleDay ? groupSpace / accounts.length : Math.min(30, (groupSpace - 14) / accounts.length);
     const color = account => colors[(account.id - 1) % colors.length];
     const svgNode = (tag, attrs = {}, text) => {
       const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -41,24 +45,29 @@
       if (text !== undefined) node.textContent = text;
       return node;
     };
-    const svg = svgNode('svg', {width, height: 340, viewBox: `0 0 ${width} 340`, role: 'group', 'aria-label': `${label}，按日期与妙手账号分组`});
-    svg.append(svgNode('text', {x: 58, y: 20, fill: '#6d7283', 'font-size': 12}, '数量'));
+    const svg = svgNode('svg', {width, height: 322, viewBox: `0 0 ${width} 322`, role: 'group', 'aria-label': `${label}，按日期与妙手账号分组`});
+    svg.append(svgNode('text', {x: 58, y: 19, fill: '#94a3b8', 'font-size': 11}, '数量'));
     for (let value = 0; value <= ceiling; value += step) {
       const y = 280 - value / ceiling * 240;
-      svg.append(svgNode('line', {x1: 62, x2: width - 20, y1: y, y2: y, stroke: '#e5e8f0'}),
-        svgNode('text', {x: 52, y: y + 4, fill: '#6d7283', 'font-size': 11, 'text-anchor': 'end'}, value.toLocaleString()));
+      svg.append(svgNode('line', {x1: 62, x2: width - 20, y1: y, y2: y, stroke: '#edf1f6', 'stroke-dasharray': value ? '3 4' : 'none'}),
+        svgNode('text', {x: 50, y: y + 4, fill: '#94a3b8', 'font-size': 11, 'text-anchor': 'end'}, value.toLocaleString()));
     }
     dates.forEach((date, dateIndex) => {
       const center = 62 + groupSpace * (dateIndex + .5), start = center - accounts.length * barSpace / 2;
-      svg.append(svgNode('text', {x: center, y: 308, fill: '#596177', 'font-size': 12, 'text-anchor': 'middle'}, date.slice(5)));
+      if (!singleDay) svg.append(svgNode('text', {x: center, y: 306, fill: '#64748b', 'font-size': 11, 'text-anchor': 'middle'}, date.slice(5)));
       accounts.forEach((account, accountIndex) => {
         const value = values.get(`${date}:${account.id}`) || 0, height = value / ceiling * 240;
-        const x = start + accountIndex * barSpace + 3, barWidth = Math.max(6, barSpace - 6);
+        const barWidth = singleDay ? Math.min(46, barSpace * .48) : Math.max(4, barSpace - 4);
+        const x = start + accountIndex * barSpace + (barSpace - barWidth) / 2;
         const caption = `${date} · ${account.name} · ${label} ${value.toLocaleString()}`;
         const group = svgNode('g', {tabindex: 0, role: metric === 'orders' ? 'button' : 'img', 'aria-label': caption, 'data-chart-account': account.id, 'data-chart-date': date});
         group.append(svgNode('title', {}, caption),
-          svgNode('rect', {x, y: 280 - height, width: barWidth, height, rx: 3, fill: color(account)}),
-          svgNode('text', {x: x + barWidth / 2, y: 274 - height, 'text-anchor': 'middle', 'font-size': 10, fill: '#596177'}, value));
+          svgNode('rect', {x, y: 280 - height, width: barWidth, height, rx: 4, fill: color(account)}));
+        if (singleDay || barSpace >= 24) group.append(svgNode('text', {x: x + barWidth / 2, y: 271 - height, 'text-anchor': 'middle', 'font-size': singleDay ? 12 : 10, fill: '#475569'}, value));
+        if (singleDay) {
+          const name = account.name.length > 11 ? account.name.slice(0, 10) + '…' : account.name;
+          svg.append(svgNode('text', {x: x + barWidth / 2, y: 306, 'text-anchor': 'middle', 'font-size': 11, fill: '#64748b'}, name));
+        }
         const describe = () => { el('statisticsChartHint').textContent = caption; };
         group.addEventListener('mouseenter', describe); group.addEventListener('focus', describe);
         if (metric === 'orders') {
@@ -74,7 +83,7 @@
       const item = document.createElement('span'), swatch = document.createElement('i'), name = document.createElement('span');
       swatch.style.backgroundColor = color(account); name.textContent = account.name; item.append(swatch, name); return item;
     }));
-    el('statisticsChartHint').textContent = maximum ? '日期从左到右排列；悬停或聚焦柱体查看数值。' + (metric === 'orders' ? '点击柱体可查看对应账号订单。' : '') : '当前筛选下该指标均为 0。';
+    el('statisticsChartHint').textContent = maximum ? '悬停或聚焦柱体查看数值' + (metric === 'orders' ? ' · 点击柱体查看对应账号订单' : '') : '当前筛选下该指标均为 0。';
   }
   function beijingDate(offset = 0) {
     return new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
@@ -88,6 +97,12 @@
     el('statisticsRows').replaceChildren();
     el('statisticsCards').replaceChildren();
     el('statisticsStatus').textContent = '筛选已修改，请查询统计。';
+    dateShortcuts();
+  }
+  function dateShortcuts() {
+    const today = beijingDate(), start = el('statisticsStart').value, end = el('statisticsEnd').value;
+    el('statisticsToday').setAttribute('aria-pressed', String(start === today && end === today));
+    el('statisticsWeek').setAttribute('aria-pressed', String(start === beijingDate(-6) && end === today));
   }
   function accountsChanged(accounts) {
     const selected = el('statisticsAccount').value || 'all';
@@ -102,12 +117,13 @@
   function render(data) {
     current = data;
     accountsChanged(data.accounts);
-    const cards = [['采集入池', data.totals.collected], ['保存成功', data.totals.saved],
-      ['发布已提交', data.totals.submitted], ['编辑／发布异常', data.totals.editFailed + data.totals.publishFailed],
-      ['订单数', data.totals.orders]];
-    el('statisticsCards').replaceChildren(...cards.map(([label, value]) => {
-      const card = document.createElement('div'), title = document.createElement('span'), number = document.createElement('strong');
-      title.textContent = label; number.textContent = String(value); card.append(title, number); return card;
+    const cards = [['订单数', data.totals.orders, '按下单日期去重'], ['采集入池', data.totals.collected, '本地新增商品'],
+      ['保存成功', data.totals.saved, '已保存至妙手'], ['发布已提交', data.totals.submitted, '妙手已接受请求'],
+      ['编辑／发布异常', data.totals.editFailed + data.totals.publishFailed, `编辑 ${data.totals.editFailed} · 发布 ${data.totals.publishFailed}`]];
+    el('statisticsCards').replaceChildren(...cards.map(([label, value, note], index) => {
+      const card = document.createElement('div'), title = document.createElement('span'), number = document.createElement('strong'), detail = document.createElement('small');
+      card.className = `statistics-kpi${index === 0 ? ' statistics-kpi-primary' : ''}`;
+      title.textContent = label; number.textContent = Number(value || 0).toLocaleString('zh-CN'); detail.textContent = note; card.append(title, number, detail); return card;
     }));
     el('statisticsRows').replaceChildren(...data.rows.map(row => {
       const tr = document.createElement('tr');
@@ -128,11 +144,12 @@
     if (data.totals.quantityMissing) missing.push(`${data.totals.quantityMissing} 个包裹缺少件数`);
     const syncTimes = Object.values(data.lastOrderSync || {}).sort();
     const sync = syncTimes.length ? `；订单最近同步 ${new Date(syncTimes.at(-1)).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hour12: false})}` : '；订单尚无本地同步记录';
-    el('statisticsStatus').textContent = `${data.start} 至 ${data.end} · ${data.rows.length} 条每日账号记录${sync}。${[...data.warnings, ...missing].join('；')}`;
+    el('statisticsStatus').textContent = `${data.rows.length} 条每日账号记录${sync}。${[...data.warnings, ...missing].join('；')}`;
     el('statisticsExport').disabled = false;
     renderChart();
   }
   async function open() {
+    dateShortcuts();
     const request = ++revision;
     requestController?.abort(); requestController = new AbortController();
     current = null; el('statisticsExport').disabled = true;
@@ -152,6 +169,7 @@
   }
   function setPage(page) {
     const active = page === 'dataStatistics' || page === 'orders';
+    document.body.classList.toggle('statistics-workspace-active', active);
     const collectionContext = document.querySelector('.collection-context-bar');
     if (collectionContext) collectionContext.hidden = active;
     el('statisticsTabs').hidden = !active;
@@ -173,6 +191,7 @@
     el('statisticsChartView').addEventListener('click', () => chartView(false));
     el('statisticsTableView').addEventListener('click', () => chartView(true));
     el('statisticsStart').value = beijingDate(-6); el('statisticsEnd').value = beijingDate();
+    dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
     ['statisticsStart', 'statisticsEnd', 'statisticsAccount'].forEach(id => el(id).addEventListener('change', invalidate));
     [['statisticsToday', 0], ['statisticsWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {

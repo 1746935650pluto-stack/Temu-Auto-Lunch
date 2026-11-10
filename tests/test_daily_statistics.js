@@ -7,7 +7,8 @@ const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
 function setup() {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint']) document.createNode(id);
+  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
   document.addEventListener = (name, callback) => events[name] = callback;
@@ -46,10 +47,11 @@ test('filter changes clear old data and disable stale exports', async () => {
 test('integrated tabs retain order account and hide outside statistics', async () => {
   const s=setup();s.window.dataStatistics.setPage('orders');
   assert.equal(s.el('collectionContext').hidden,true);
+  assert.equal(s.document.body.classList.contains('statistics-workspace-active'),true);
   assert.equal(s.el('statisticsTabs').hidden,false);assert.equal(s.el('statisticsOrdersTab').attrs['aria-selected'],'true');
   await s.el('statisticsOrdersTab').dispatch('click');assert.deepEqual(s.opened,[2]);
   s.window.dataStatistics.setPage('dataStatistics');assert.equal(s.el('collectionContext').hidden,true);
-  s.window.dataStatistics.setPage('settings');assert.equal(s.el('statisticsTabs').hidden,true);assert.equal(s.el('collectionContext').hidden,false);
+  s.window.dataStatistics.setPage('settings');assert.equal(s.el('statisticsTabs').hidden,true);assert.equal(s.el('collectionContext').hidden,false);assert.equal(s.document.body.classList.contains('statistics-workspace-active'),false);
 });
 test('request failures show errors and keep export disabled', async () => {
   const s=setup();const pending=s.window.dataStatistics.open();
@@ -106,4 +108,17 @@ test('long ranges keep one bar per visible account and date in a scrollable char
   const svg=s.el('statisticsChartPlot').children[0];
   assert.equal(svg.children.filter(node=>node.attrs['data-chart-account']).length,210);
   assert.ok(Number(svg.attrs.width)>760);assert.equal(s.el('statisticsChartLegend').children.length,7);
+});
+
+test('single-day comparisons spread account bars across the plot and label each account', async () => {
+  const s=setup(),data=result('NL'),base=data.rows[0];
+  s.el('statisticsChartPlot').clientWidth=1000;
+  data.rows=Array.from({length:7},(_,index)=>({...base,accountId:index+1,accountName:`account-${index+1}`,orders:10*(index+1)}));
+  const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const svg=s.el('statisticsChartPlot').children[0],bars=svg.children.filter(node=>node.attrs['data-chart-account']);
+  const first=Number(bars[0].children[1].attrs.x),last=Number(bars[6].children[1].attrs.x);
+  assert.ok(last-first>Number(svg.attrs.width)*.65);
+  for(let index=1;index<=7;index++) assert.ok(svg.children.some(node=>node.textContent===`account-${index}`));
+  assert.match(s.el('statisticsChartTitle').textContent,/订单数对比/);
+  assert.equal(s.el('statisticsCards').children[0].children[0].textContent,'订单数');
 });
