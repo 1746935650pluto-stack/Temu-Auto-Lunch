@@ -64,6 +64,7 @@ from order_sync import OrderSyncStore, extract_package_rows, normalize_package
 from daily_statistics import DailyStatistics, shop_report
 from attribute_defaults import apply_attribute_defaults, default_rule
 from shipping_bindings import ShippingBindings
+from size_reference import (SizeReferenceTemplates, chart_key, generate_reference, infer_reference, fill_bound_references)
 from zhihou import ZhiHouApiError, ZhiHouClient
 from launcher_support import workbench_id
 
@@ -73,7 +74,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.201'
+APP_VERSION = '1.2.202'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -1476,6 +1477,13 @@ def run_automation_job(pool: AutomationPool, job_id: str, vendor: Any, get_item:
         image_source = '店铺商品图片' if _usable_product_images(shop_item.get('imgUrls')) else '自动化池快照图片'
         source_image_count = len(_usable_product_images(shop_item.get('imgUrls'))
                                  or _usable_product_images((staged.get('item') or {}).get('imgUrls')))
+        reference_store = SizeReferenceTemplates(DATA_ROOT / 'size_reference_templates.sqlite3')
+        if reference_store.path.exists():
+            reference_account = getattr(pool, 'account_id', None) or getattr(ai_client, 'account_id', None) or 1
+            ensure_active()
+            fill_bound_references(prepared, reference_store, shared_automation().scope(reference_account), shop_id,
+                lambda context: (ensure_active(), ai_client.infer_size_reference(context))[1],
+                lambda message: pool.update_job(job_id, step, 'running', message))
         try:
             validate_before_ai(prepared, job.get('events') or [])
         except ValueError as error:
@@ -2282,7 +2290,7 @@ class DeepSeekClient:
             "thinking": {"type": "disabled"},
             # A 220–240 Chinese-character title can need substantially more
             # than 360 output tokens. Leave enough headroom for the full title.
-            "max_tokens": 1200 if structured else 600,
+            "max_tokens": 4500 if purpose == 'size_reference' else (1200 if structured else 600),
             "temperature": 0.3,
             "messages": messages,
         }
@@ -2392,6 +2400,11 @@ class DeepSeekClient:
         ))
 
 
+    def infer_size_reference(self, context):
+        if not self.configured:
+            raise RuntimeError('DeepSeek API 密钥尚未配置')
+        return infer_reference(self._completion, context)
+
     def infer_attribute(self, context: dict[str, Any]) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError('DeepSeek API 密钥尚未配置')
@@ -2405,6 +2418,7 @@ class DeepSeekClient:
                 'STRING/NUMBER 自由输入使用 vid=0，name 填写文本；数值另填 numberValue 字符串。'
                 '遵循数量、单位、范围、精度和合计规则。已有属性中的事实可以用于修正旧类目编号。'
                 '成分 TABLE 必须有明确材质及比例依据，不得把材质词自动解释为100%，不得仅凭类目猜比例。'
+                'TABLE 的 numberValue 只填数字字符串，例如"100"或"60.5"，不要附加%或％；单位由类目字段提供。'
                 '不得猜造材质、成分比例、产地、品牌、认证或安全年龄；年龄段须有明确人群/年龄依据并符合父属性。'
                 '资料不足返回 {"uncertain":true,"values":[],"evidence":""}。'
                 '不要 Markdown、解释或额外字段。'
@@ -3156,7 +3170,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "viewCacheNamespace": workbench_id(ROOT, DATA_ROOT),
                 "resourceVersion": assets_version,
                 "pendingUpdate": assets_version != APP_VERSION,
-                "capabilities": {"poolFiltering": True, "poolIds": [1, 2, 3],
+                "capabilities": {"aiSizeReference": True, "poolFiltering": True, "poolIds": [1, 2, 3],
                                  "independentPoolPublishing": True,
                                  "exclusiveBackend": True, "snapshotRouteRecovery": True,
                                  "activityEvents": True, "localViewCache": True,
@@ -3262,6 +3276,24 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.BAD_GATEWAY, str(error))
             except (OSError, sqlite3.Error):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '物流绑定读取失败')
+            return
+        if route.path == '/api/size-reference/template':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页请求')
+                return
+            try:
+                query = parse_qs(route.query)
+                shop = int(query.get('shopId', ['0'])[0])
+                key = tuple(query.get(k, [''])[0] for k in ('cid', 'source', 'templateId'))
+                if shop <= 0 or not key[0].isdigit() or not key[2].isdigit() or not key[1] or len(key[1]) > 40:
+                    raise ValueError('请先选择店铺、类目和尺码表模板')
+                binding = SizeReferenceTemplates(DATA_ROOT / 'size_reference_templates.sqlite3').get(
+                    shared_automation().scope(self.collection_account_id), shop, key)
+                self._json(HTTPStatus.OK, {'data': {'template': binding}})
+            except (ValueError, TypeError) as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except (sqlite3.Error, OSError):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '尺码模板读取失败')
             return
         if route.path == '/api/settings/deepseek':
             if not self._same_origin():
@@ -3458,7 +3490,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         # The same directory also contains .env and server.py. Only public
         # browser assets are served, so secrets cannot be fetched over HTTP.
-        if route.path in {"/", "/index.html", "/proportion-chart.js", "/shipping-bindings.js", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
+        if route.path in {"/", "/index.html", "/size-reference.js", "/proportion-chart.js", "/shipping-bindings.js", "/data-statistics.js", "/order-shop-chart.js", "/navigation-state.js", "/app.js", "/account-context.js", "/virtual-list.js", "/diagnostics-panel.js", "/shared-automation.js", "/local-view-cache.js", "/live-status.js", "/desktop-ui.js", "/pricing-workbench.js", "/collection-sync.js", "/automatic-tasks.js", "/live-editor.js", "/zhihou.js", "/styles.css"}:
             super().do_GET()
             return
         self._error(HTTPStatus.NOT_FOUND, "未找到页面")
@@ -4302,6 +4334,31 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
             except RuntimeError as error:
                 self._error(HTTPStatus.BAD_GATEWAY, str(error))
+            return
+        if route.path in {'/api/ai/size-reference', '/api/size-reference/template'}:
+            if not self._local_configuration_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页提交')
+                return
+            try:
+                body = self._read_body(500_000)
+                item, index, columns = body.get('item'), body.get('chartIndex'), body.get('columns')
+                chart_key(item, index)
+                if route.path == '/api/ai/size-reference':
+                    client = DeepSeekClient(self.collection_account_id)
+                    result = generate_reference(item, index, columns, client.infer_size_reference)
+                else:
+                    if body.get('confirmation') != 'SAVE_SIZE_REFERENCE_TEMPLATE':
+                        raise ValueError('请确认保存尺码参考模板')
+                    result = {'template': SizeReferenceTemplates(DATA_ROOT / 'size_reference_templates.sqlite3').save(
+                        shared_automation().scope(self.collection_account_id), body.get('shopId'), item, index, columns,
+                        body.get('name'), body.get('enabled'), body.get('revision'))}
+                self._json(HTTPStatus.OK, {'data': result})
+            except (ValueError, TypeError, KeyError) as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except RuntimeError as error:
+                self._error(HTTPStatus.BAD_GATEWAY, str(error))
+            except (sqlite3.Error, OSError):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '尺码参考模板处理失败')
             return
         if route.path == "/api/ai/title-polish":
             if not self._same_origin():

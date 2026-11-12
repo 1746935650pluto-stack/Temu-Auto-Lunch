@@ -615,7 +615,7 @@ function renderDeepSeekSettings(data) {
   $('#deepSeekModel').textContent = `当前模型：${data.model || '沿用后台配置'}。此处仅管理密钥，不修改模型或接口地址。`;
   const usage = data.usageToday;
   if (usage && Number.isFinite(usage.requests)) {
-    $('#deepSeekModel').textContent += ` 今日记录 ${usage.requests} 次请求、${usage.totalTokens.toLocaleString()} tokens（输入 ${usage.promptTokens.toLocaleString()} / 输出 ${usage.completionTokens.toLocaleString()}，缓存命中 ${usage.cacheHitTokens.toLocaleString()}）；标题首轮 ${usage.byPurpose?.title_initial || 0} 次、修正 ${usage.byPurpose?.title_repair || 0} 次、属性 ${usage.byPurpose?.attribute || 0} 次。仅统计新版启用后，点击刷新更新。`;
+    $('#deepSeekModel').textContent += ` 今日记录 ${usage.requests} 次请求、${usage.totalTokens.toLocaleString()} tokens（输入 ${usage.promptTokens.toLocaleString()} / 输出 ${usage.completionTokens.toLocaleString()}，缓存命中 ${usage.cacheHitTokens.toLocaleString()}）；标题首轮 ${usage.byPurpose?.title_initial || 0} 次、修正 ${usage.byPurpose?.title_repair || 0} 次、属性 ${usage.byPurpose?.attribute || 0} 次、尺码参考 ${usage.byPurpose?.size_reference || 0} 次。仅统计新版启用后，点击刷新更新。`;
     if (usage.knownUsageRequests < usage.requests || usage.recordErrors) $('#deepSeekModel').textContent += ' 部分请求用量未返回或记录不完整，实际消耗以DeepSeek账单为准。';
   }
   updateDeepSeekControls();

@@ -1065,6 +1065,16 @@ function renderAttributeSelect(rule, attribute, attributeIndex, valueIndex) {
   return select;
 }
 
+function compositionNumberText(value, rule) {
+  const units = Array.isArray(rule.valueUnit) ? rule.valueUnit : [rule.valueUnit];
+  const text = String(value ?? '').trim();
+  if (units.some(unit => ['%', '％'].includes(String(unit).trim())) || Number(rule.valueInputSum) === 100) {
+    const match = text.match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*[%％]$/);
+    if (match) return match[1];
+  }
+  return text;
+}
+
 function renderTableAttribute(rule, attribute, attributeIndex) {
   attribute.values ||= [];
   if (!attribute.values.length) attribute.values.push({ valueUnit: rule.valueUnit?.[0] || '%', numberValue: '' });
@@ -1085,7 +1095,8 @@ function renderTableAttribute(rule, attribute, attributeIndex) {
       attribute.values[valueIndex] = choice ? valueFromRuleChoice(choice, rule, value) : { valueUnit: rule.valueUnit?.[0] || '%', numberValue: value.numberValue || '' };
       syncAttributeJson();
     });
-    const ratio = document.createElement('input'); ratio.type = 'number'; ratio.min = rule.minValue || '0'; ratio.max = rule.maxValue || '100'; ratio.step = '0.01'; ratio.placeholder = rule.numberInputTitle || '比例'; ratio.value = value.numberValue ?? '';
+    value.numberValue = compositionNumberText(value.numberValue, rule);
+    const ratio = document.createElement('input'); ratio.type = 'number'; ratio.min = rule.minValue || '0'; ratio.max = rule.maxValue || '100'; ratio.step = String(10 ** -(rule.valuePrecision ?? 2)); ratio.placeholder = '只填数字'; ratio.value = value.numberValue;
     ratio.addEventListener('input', () => { value.numberValue = ratio.value; value.valueUnit = rule.valueUnit?.[0] || '%'; syncAttributeJson(); });
     const unit = document.createElement('span'); unit.className = 'attribute-unit'; unit.textContent = rule.valueUnit?.[0] || '';
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'attribute-row-remove'; remove.textContent = '删除';
@@ -1197,8 +1208,9 @@ function validateProductAttributes(attributes) {
     if (rule.valueType === 'TABLE') {
       let total = 0;
       attribute.values.forEach((value) => {
+        value.numberValue = compositionNumberText(value.numberValue, rule);
         const number = Number(value.numberValue);
-        if (!value.vid || !Number.isFinite(number) || number < 0) throw new Error(`产品属性【${rule.name}】请填写有效的材质和比例`);
+        if (!value.vid || !value.numberValue || !Number.isFinite(number) || number < 0) throw new Error(`产品属性【${rule.name}】请填写有效的材质和比例（只填数字）`);
         total += number;
       });
       if (rule.valueInputSum != null && Math.abs(total - Number(rule.valueInputSum)) > 0.01) {
@@ -1250,6 +1262,7 @@ function fillEditor() {
   editEl('editAttributes').value = JSON.stringify(item.attributes || [], null, 2);
   editEl('editSaleAttributes').value = JSON.stringify(item.saleAttributes || [], null, 2);
   editEl('editSizeCharts').value = JSON.stringify(item.sizeCharts || [], null, 2);
+  window.sizeReferenceEditor?.reset();
   renderProductAttributes();
   loadAttributeRules(String(item.cid || ''));
   renderSkuSpecs();
@@ -1578,3 +1591,13 @@ editEl('liveItemForm').addEventListener('submit', saveEditor);
 // Start loading the category tree as soon as the workbench opens.  The picker
 // stays closed, but most users will have the hierarchy ready before editing.
 window.setTimeout(() => { loadCategoryTree(); }, 0);
+
+window.sizeReferenceContext = () => ({
+  accountId: Number(window.collectionAccountContext?.id || 1),
+  shopId: Number(editEl('editShop').value || editorState.targetShopId || 0),
+  token: editorState.item,
+  item: { title: editEl('editTitle').value, cid: editEl('editCid').value,
+    saleAttributes: JSON.parse(editEl('editSaleAttributes').value || '[]'),
+    sizeCharts: JSON.parse(editEl('editSizeCharts').value || '[]') },
+});
+window.applySizeReferenceCharts = charts => { editEl('editSizeCharts').value = JSON.stringify(charts, null, 2); };

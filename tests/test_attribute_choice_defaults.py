@@ -2,7 +2,8 @@ import copy
 import unittest
 from unittest.mock import Mock
 
-from attribute_ai import AttributeInferenceError, complete_attributes, user_choice_values
+from attribute_ai import AttributeInferenceError, complete_attributes, user_choice_values, normalize_values
+from attribute_defaults import apply_attribute_defaults
 from item_editor import apply_textile_fiber_composition_default
 
 
@@ -14,6 +15,43 @@ def composition_rule(**kwargs):
 
 
 class UserChoiceDefaultTests(unittest.TestCase):
+    def test_material_percentage_tables_use_vendor_options_even_without_composition_in_name(self):
+        for name in ('填充材料', '封面材质', '内衬材质', '材料'):
+            rule = composition_rule(name=name)
+            item = {'attributes': []}
+            self.complete(item, [rule]).assert_not_called()
+            value = item['attributes'][0]['values'][0]
+            self.assertIn(value['vid'], (10,20)); self.assertEqual(value['numberValue'], '100')
+            self.assertEqual(value['valueUnit'], '%')
+
+    def test_material_named_by_title_is_preferred_over_unrelated_options(self):
+        rule = composition_rule(name='材料', values=[{'vid':10,'name':'棉'}, {'vid':20,'name':'法兰绒'}])
+        item = {'title':'圣诞树印花法兰绒地垫', 'attributes':[]}
+        self.complete(item,[rule]).assert_not_called()
+        self.assertEqual(item['attributes'][0]['values'][0]['vid'],20)
+
+    def test_percent_suffix_is_only_removed_for_percentage_tables_and_never_rescaled(self):
+        rule = composition_rule(name='材料')
+        for original, expected in [('100%', '100'), (' 100 ％ ', '100'), (100, '100')]:
+            value = normalize_values([{'vid':10,'name':'棉','numberValue':original}],rule)[0]
+            self.assertEqual(value['numberValue'],expected);self.assertEqual(value['valueUnit'],'%')
+        pair = normalize_values([{'vid':10,'numberValue':'60.5%'},{'vid':20,'numberValue':'39.5％'}],rule)
+        self.assertEqual([v['numberValue'] for v in pair],['60.5','39.5'])
+        for invalid in ('100%%','1%00','100cm','NaN%',True):
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                normalize_values([{'vid':10,'numberValue':invalid}],rule)
+        with self.assertRaises(ValueError):
+            normalize_values([{'vid':0,'name':'100','numberValue':'100%'}],composition_rule(valueType='NUMBER',valueUnit=['cm']))
+
+    def test_valid_existing_percentage_values_are_canonicalized_in_manual_defaults_without_changed_amounts(self):
+        rule = composition_rule(name='封面材质')
+        item = {'attributes':[{'templatePid':1,'name':'封面材质','values':[
+            {'vid':10,'name':'棉','numberValue':'60%'},{'vid':20,'name':'涤纶','numberValue':'40％'}]}]}
+        source = copy.deepcopy(item)
+        self.assertIn('封面材质',apply_attribute_defaults(item,source,[rule]))
+        self.assertEqual([v['numberValue'] for v in item['attributes'][0]['values']],['60','40'])
+        self.assertEqual(source['attributes'][0]['values'][0]['numberValue'],'60%')
+
     def complete(self, item, rules, source=None):
         infer = Mock(return_value={'uncertain': True})
         complete_attributes(item, source or copy.deepcopy(item), rules, '服饰', infer, lambda _: None,

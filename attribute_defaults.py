@@ -6,7 +6,7 @@ this service performs no remote writes and never guesses unknown measurements.
 from copy import deepcopy
 from decimal import Decimal, InvalidOperation
 from attribute_ai import (attribute_for, constrained_rule, hydrate_attributes_from_source,
-                          needs_completion, normalize_values, ordered_rules, user_choice_values)
+                          needs_completion, normalize_values, ordered_rules, user_choice_values, normalize_existing_percentages)
 from item_editor import apply_required_choice_default, remove_inactive_numeric_attributes
 
 CHOICE_DEFAULTS = {
@@ -84,7 +84,8 @@ def apply_attribute_defaults(item, source, rules, *, targets=None):
             for value in (attribute_for(original, raw) or {}).get('values') or []:
                 if value.get('valueUnit') and value['valueUnit'] not in units:
                     raise ValueError(f'{name}源数值单位与当前类目不一致，不能直接换算')
-    changed = hydrate_attributes_from_source(working, source or item, rules)
+    changed = normalize_existing_percentages(working, rules)
+    changed += hydrate_attributes_from_source(working, source or item, rules)
     for raw in ordered_rules(rules):
         rule = constrained_rule(working, raw)
         if rule and default_rule(working, rule, bool(targets and rule.get('name') in targets), source=source, rules=rules):

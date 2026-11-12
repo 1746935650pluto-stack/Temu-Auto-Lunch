@@ -17,11 +17,12 @@ test('usage summary distinguishes measured tokens and missing usage', () => {
   const {context, $} = setup();
   context.renderDeepSeekSettings({configured: true, model: 'deepseek-flash', usageToday: {
     requests: 3, knownUsageRequests: 2, totalTokens: 900, promptTokens: 700, completionTokens: 200,
-    cacheHitTokens: 128, byPurpose: {title_initial: 1, title_repair: 1, attribute: 1}, recordErrors: 0
+    cacheHitTokens: 128, byPurpose: {title_initial: 1, title_repair: 1, attribute: 1, size_reference: 2}, recordErrors: 0
   }});
   const text = $('#deepSeekModel').textContent;
   assert.match(text, /3 次请求、900 tokens/);
   assert.match(text, /修正 1 次/);
+  assert.match(text, /尺码参考 2 次/);
   assert.match(text, /实际消耗以DeepSeek账单为准/);
 });
 test('older server with no usage still renders configuration', () => {

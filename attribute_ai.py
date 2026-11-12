@@ -68,6 +68,24 @@ def constrained_rule(item, rule):
     return result
 
 
+def percentage_rule(rule):
+    units = rule.get('valueUnit') or []
+    units = [units] if isinstance(units, str) else units
+    return rule.get('valueType') == 'TABLE' and (
+        rule.get('valueInputSum') in (100, '100') or any(str(unit).strip() in ('%', '％') for unit in units))
+
+
+def numeric_amount(value, rule):
+    # MiaoShou supplies the unit separately. Accept a single pasted suffix,
+    # never turn a fraction into a percentage or remove arbitrary characters.
+    text = str(value).strip()
+    if percentage_rule(rule):
+        match = re.fullmatch(r'([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*[%％]', text)
+        if match:
+            text = match.group(1)
+    return Decimal(text)
+
+
 def normalize_values(values, rule):
     if not isinstance(values, list) or not values or len(values) > int(rule.get('chooseMaxNum') or 1):
         raise ValueError('选项数量不符合类目规则')
@@ -109,7 +127,7 @@ def normalize_values(values, rule):
         if (rule.get('valueType') in ('TABLE', 'NUMBER')
                 or (rule.get('valueType') == 'STRING' and rule.get('propertyValueType') == 1)):
             try:
-                amount = Decimal(str(value.get('numberValue')))
+                amount = numeric_amount(value.get('numberValue'), rule)
                 if not amount.is_finite():
                     raise ValueError('属性数值必须是有限数字')
                 if rule.get('minValue') not in (None, '') and amount < Decimal(str(rule['minValue'])):
@@ -127,6 +145,26 @@ def normalize_values(values, rule):
     if rule.get('valueType') == 'TABLE' and rule.get('valueInputSum') is not None and total != Decimal(str(rule['valueInputSum'])):
         raise ValueError('成分比例合计不符合类目规则')
     return result
+
+
+def normalize_existing_percentages(item, rules):
+    """Canonicalize valid existing TABLE values without changing their amounts."""
+    changed = []
+    for raw in ordered_rules(rules):
+        rule = constrained_rule(item, raw)
+        if not rule or not percentage_rule(rule):
+            continue
+        attribute = attribute_for(item, rule)
+        if not attribute or not attribute.get('values'):
+            continue
+        try:
+            values = normalize_values(attribute['values'], rule)
+        except (ValueError, TypeError, KeyError):
+            continue
+        if values != attribute['values']:
+            attribute['values'] = values
+            changed.append(rule.get('name', '比例'))
+    return changed
 
 
 def needs_completion(item, rule):
@@ -274,11 +312,7 @@ def user_choice_values(item, source, rule):
         if int(rule.get('chooseMinNum') or 1) > 1:
             return None
         return normalize_values([random.choice(choices)], rule)
-    units = rule.get('valueUnit') or []
-    if isinstance(units, str):
-        units = [units]
-    if (rule.get('valueType') != 'TABLE' or '成分' not in str(rule.get('name') or '')
-            or not (rule.get('valueInputSum') in (100, '100') or '%' in units or '％' in units)):
+    if not percentage_rule(rule):
         return None
     if rule.get('valueInputSum') not in (None, '', 100, '100'):
         return None
@@ -294,7 +328,12 @@ def user_choice_values(item, source, rule):
         if int(rule.get('chooseMinNum') or 1) > 1:
             return None
         candidates = []
-        for choice in choices:
+        title = str(source.get('title') or item.get('title') or '').casefold()
+        matched = [choice for choice in choices if len(str(choice['name']).strip()) >= 2
+                   and str(choice['name']).strip().casefold() in title]
+        # Prefer a specific option already named by the product (e.g. 法兰绒).
+        preferred = sorted(matched, key=lambda c: -len(c['name']))[:1] or choices
+        for choice in preferred:
             try:
                 candidates.append(normalize_values([{**choice, 'numberValue': '100'}], rule))
             except (ValueError, TypeError):
@@ -311,7 +350,7 @@ def user_choice_values(item, source, rule):
             return None
         try:
             raw_number = value.get('numberValue')
-            amount = Decimal(str(raw_number if raw_number not in (None, '') else 0))
+            amount = numeric_amount(raw_number if raw_number not in (None, '') else 0, rule)
             if not amount.is_finite() or amount < 0:
                 return None
         except InvalidOperation:
@@ -353,6 +392,7 @@ def complete_attributes(item, source, rules, category, infer, log, targets=None,
                         allow_user_choice_defaults=False):
     working = deepcopy(item)
     rules = ordered_rules(rules)
+    normalize_existing_percentages(working, rules)
     attempted = attempted if attempted is not None else set()
     evidence = str(source.get('title') or '') + '\n' + json.dumps(source.get('attributes') or [], ensure_ascii=False)
     failures = []
@@ -409,7 +449,7 @@ def complete_attributes(item, source, rules, category, infer, log, targets=None,
             if rule.get('valueType') == 'TABLE':
                 # The model may translate material names, but cannot invent percentages.
                 numbers = {Decimal(a or b) for a, b in re.findall(
-                    r'(\d+(?:\.\d+)?)\s*%|"numberValue"\s*:\s*"?(\d+(?:\.\d+)?)', proof)}
+                    r'(\d+(?:\.\d+)?)\s*[%％]|"numberValue"\s*:\s*"?(\d+(?:\.\d+)?)', proof)}
                 if any(Decimal(v['numberValue']) not in numbers for v in values):
                     raise ValueError('缺少明确的成分比例依据，不能自动猜测百分比')
             elif any(v['numberValue'] is not None for v in values):

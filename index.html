@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.201" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.202" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.201">当前版本 V1.2.201</span>
+          <span class="app-version" data-resource-version="1.2.202">当前版本 V1.2.202</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -205,6 +205,11 @@
                     <div class="sku-spec-groups" id="skuSpecGroups"></div>
                   </section>
                   <div id="editSkuRows" class="live-sku-rows"></div>
+                </section>
+                <section class="size-reference-panel" id="sizeReferencePanel" aria-labelledby="sizeReferenceTitle">
+                  <div class="size-reference-head"><div><h4 id="sizeReferenceTitle">尺码表 · AI 通用参考</h4><p>已有尺寸保留，AI 只补缺失项。生成值为通用参考尺寸，可在应用前修改。</p></div><button class="button subtle" type="button" id="sizeReferenceReload">读取当前尺码表</button></div>
+                  <div id="sizeReferenceControls"></div><p id="sizeReferenceStatus" role="status" aria-live="polite"></p>
+                  <div id="sizeReferencePreview" class="size-reference-preview"></div>
                 </section>
                 <details class="live-advanced"><summary>高级资料：类目属性、规格与尺码表（JSON）</summary><p>新建空白商品时，须按妙手类目规则补齐属性和规格。尺码表保存报错时，可在此检查对应尺码行的 groupIdAndValueMap。</p><div class="live-form-grid"><label class="wide">类目属性 attributes<textarea id="editAttributes" rows="7" spellcheck="false"></textarea></label><label class="wide">销售规格 saleAttributes<textarea id="editSaleAttributes" rows="7" spellcheck="false"></textarea></label><label class="wide">尺码表 sizeCharts<textarea id="editSizeCharts" rows="9" spellcheck="false"></textarea></label></div></details>
                 <p id="liveEditorError" class="live-error hidden"></p>
@@ -769,23 +774,24 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./proportion-chart.js?v=1.2.201&build=2"></script>
-    <script src="./data-statistics.js?v=1.2.201"></script>
-    <script src="./order-shop-chart.js?v=1.2.201"></script>
-    <script src="./navigation-state.js?v=1.2.201"></script>
-    <script src="./account-context.js?v=1.2.201"></script>
-  <script src="./local-view-cache.js?v=1.2.201"></script>
-  <script src="./live-status.js?v=1.2.201"></script>
+    <script src="./proportion-chart.js?v=1.2.202&build=2"></script>
+    <script src="./data-statistics.js?v=1.2.202"></script>
+    <script src="./order-shop-chart.js?v=1.2.202"></script>
+    <script src="./navigation-state.js?v=1.2.202"></script>
+    <script src="./account-context.js?v=1.2.202"></script>
+  <script src="./local-view-cache.js?v=1.2.202"></script>
+  <script src="./live-status.js?v=1.2.202"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.201"></script>
-  <script src="./shared-automation.js?v=1.2.201"></script>
-  <script src="./pricing-workbench.js?v=1.2.201"></script>
-  <script src="./shipping-bindings.js?v=1.2.201"></script>
-  <script src="./app.js?v=1.2.201"></script>
+  <script src="./diagnostics-panel.js?v=1.2.202"></script>
+  <script src="./shared-automation.js?v=1.2.202"></script>
+  <script src="./pricing-workbench.js?v=1.2.202"></script>
+  <script src="./shipping-bindings.js?v=1.2.202"></script>
+  <script src="./app.js?v=1.2.202"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
-    <script src="./automatic-tasks.js?v=1.2.201"></script>
-    <script src="./desktop-ui.js?v=1.2.201"></script>
-    <script src="./live-editor.js?v=1.2.201"></script>
+    <script src="./automatic-tasks.js?v=1.2.202"></script>
+    <script src="./desktop-ui.js?v=1.2.202"></script>
+    <script src="./size-reference.js?v=1.2.202"></script>
+    <script src="./live-editor.js?v=1.2.202"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

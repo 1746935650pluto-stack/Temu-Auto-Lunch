@@ -50,7 +50,7 @@ class CopySourceRepairTests(unittest.TestCase):
         self.backend = SimpleNamespace(HALF_CATEGORY_ATTRIBUTE_RULES='rules', HALF_CREATE='create',
             HALF_FREIGHT=server.HALF_FREIGHT, HALF_WAREHOUSE=server.HALF_WAREHOUSE,
             miao_request=lambda fn, *_, **__: fn(), created_collect_box_detail_id=lambda r: r['data']['id'],
-            automation_logistic_rows=automation_logistic_rows,
+            automation_logistic_rows=automation_logistic_rows, bound_logistics=lambda *_: {}, automation_bound_logistic_id=server.automation_bound_logistic_id,
             hydrate_attributes_from_source=hydrate_attributes_from_source, missing_attributes=missing_attributes,
             complete_attributes=complete_attributes, apply_source_origin_default=apply_source_origin_default,
             complete_automation_attributes=complete_automation_attributes,

@@ -23,6 +23,25 @@ class FakeAI:
 
 
 class AutomationWorkflowTests(unittest.TestCase):
+    def test_enabled_reference_template_fills_before_preflight_without_changing_source(self):
+        from types import SimpleNamespace
+        from size_reference import SizeReferenceTemplates
+        from test_size_reference import sample, COLS, ANSWER
+        reference = sample()
+        self.source['sizeCharts'] = reference['sizeCharts']
+        # Existing chart row S supplies the names here; add M as an empty row.
+        self.source['sizeCharts'][0]['sizeItems'].append({'sizeName':'M','elementValueList':[]})
+        before = copy.deepcopy(self.source['sizeCharts'])
+        store = SizeReferenceTemplates(self.pool.path.parent / 'references.sqlite3')
+        store.save('fixture-scope',1234,self.source,0,COLS,'参考模板',True,0)
+        with patch.object(server,'SizeReferenceTemplates',return_value=store), \
+             patch.object(server,'shared_automation',return_value=SimpleNamespace(scope=lambda _: 'fixture-scope')), \
+             patch.object(FakeAI,'infer_size_reference',return_value=ANSWER,create=True) as infer:
+            self.test_one_item_flow_records_each_submission_and_keeps_first_image()
+        infer.assert_called_once()
+        self.assertEqual(self.source['sizeCharts'],before)
+        self.assertTrue(any('通用参考尺寸' in e['message'] for e in self.pool.get_job('a'*32)['events']))
+
     def test_manually_bound_nondefault_logistics_reaches_verified_save(self):
         original = server.automation_logistic_rows
         def rows(*args, **kwargs):

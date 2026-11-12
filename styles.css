@@ -1025,3 +1025,22 @@ button.proportion-row:hover, .proportion-row.is-selected { border-color: #b5cefa
 }
 
 
+
+/* Editable, source-labelled size references. */
+.size-reference-panel { margin:18px 0; padding:22px; border:1px solid #dfe6f1; border-radius:16px; background:#fff; }
+.size-reference-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.size-reference-head h4 { margin:0 0 7px; font-size:17px; }
+.size-reference-head p, #sizeReferenceStatus { color:#728199; font-size:13px; line-height:1.7; }
+.size-reference-fields { display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin-top:18px; }
+.size-reference-fields label { display:flex; flex-direction:column; gap:7px; color:#50617a; font-size:13px; }
+.size-reference-fields input:not([type=checkbox]), .size-reference-fields select { border:1px solid #dfe6f1; border-radius:8px; padding:10px 12px; max-width:260px; background:#fff; }
+.size-reference-fields .size-reference-toggle { flex-direction:row; align-items:center; align-self:center; flex-basis:100%; width:100%; max-width:none; justify-content:flex-start; }
+.size-reference-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.size-reference-preview { overflow-x:auto; }
+.size-reference-preview table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+.size-reference-preview th, .size-reference-preview td { padding:12px; border:1px solid #e6ecf5; text-align:center; }
+.size-reference-preview th { background:#f5f8fd; color:#52627b; }
+.size-reference-preview input { width:110px; border:1px solid #dbe4f2; padding:9px; border-radius:7px; color:#2563eb; background:#f3f7ff; text-align:center; }
+.size-reference-preview small { display:block; color:#8796ab; font-size:11px; margin-top:4px; }
+#sizeReferenceStatus.error { color:#b45309; }
+@media(max-width:700px) { .size-reference-head { align-items:start; flex-direction:column; } .size-reference-panel { padding:15px; } }
