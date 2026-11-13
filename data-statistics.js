@@ -4,7 +4,7 @@
   const metrics = ['collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed', 'needsInput', 'orders', 'packages', 'quantity'];
   const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
   let revision = 0, current = null, requestController = null, viewMode = 'bar';
-  let syncingOrders = false, pageActive = false;
+  let pageActive = false;
   let autoPollTimer = null, autoPollController = null, autoRevision = 0;
   const autoCompletions = new Map();
   const metricLabels = {...Object.fromEntries(metrics.map((key, index) => [key, headings[index + 2]])), failed: '编辑／发布异常'};
@@ -204,104 +204,15 @@
       if (request === revision && error.name !== 'AbortError') el('statisticsStatus').textContent = `统计读取失败：${error.message}`;
     }
   }
-  async function syncOrders(mode = 'recent') {
-    if (syncingOrders) return;
-    syncingOrders = true;
-    const selected = el('statisticsAccount').value || 'all';
-    const button = el('statisticsSyncOrders'), history = el('statisticsSyncHistory'), status = el('statisticsSyncStatus');
-    button.disabled = history.disabled = true;
-    const requestId = `orders_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    status.hidden = false; status.style.whiteSpace = 'pre-line';
-    status.textContent = '正在读取可同步账号…';
-    let succeeded = 0, completed = 0, skipped = 0, timer = null, pollBusy = false, ended = false;
-    const states = new Map(), controller = new AbortController();
-    const paint = () => {
-      const title = mode === 'recent' ? '快速同步最近 100 条' : '补齐历史订单';
-      status.textContent = `${title}：已完成 ${completed}/${states.size} 个账号，成功 ${succeeded}，失败 ${completed - succeeded}` +
-        (skipped ? `，跳过 ${skipped} 个未配置或不可用账号` : '') + '。\n' +
-        [...states.values()].map(row => `${row.name}：${row.label} · 已读取 ${row.pages} 页 / ${row.received} 条` +
-          (row.message ? ` · ${row.message}` : '')).join('\n');
-    };
-    const progressUrl = `/api/orders/sync-progress?requestId=${encodeURIComponent(requestId)}`;
-    const poll = async () => {
-      if (pollBusy || ended) return;
-      pollBusy = true;
-      try {
-        const response = await fetch(progressUrl, {cache: 'no-store', signal: controller.signal});
-        const result = await response.json();
-        if (!ended && response.ok && Array.isArray(result.data?.entries)) {
-          for (const entry of result.data.entries) {
-            const row = states.get(entry.accountId);
-            if (!row || row.done || entry.requestId !== requestId) continue;
-            if (Number.isSafeInteger(entry.pages) && entry.pages >= row.pages) row.pages = entry.pages;
-            if (Number.isSafeInteger(entry.received) && entry.received >= row.received) row.received = entry.received;
-            row.label = entry.status === 'completed' ? '已写入，正在确认' : '同步中';
-          }
-          paint();
-        }
-      } catch (_) { /* Progress failure must not retry a synchronization. */ }
-      finally { pollBusy = false; }
-    };
-    try {
-      const response = await fetch('/api/miaoshou-accounts', {cache: 'no-store'});
-      const result = await response.json();
-      if (!response.ok || !Array.isArray(result.data?.accounts)) throw Error(result.error || '读取账号失败');
-      const accounts = [...new Map(result.data.accounts.filter(account =>
-        Number.isSafeInteger(account.id) && account.id > 0 &&
-        (selected === 'all' || String(account.id) === selected)).map(account => [account.id, account])).values()];
-      const eligible = accounts.filter(account => account.configured && !account.blocked);
-      skipped = accounts.length - eligible.length;
-      if (!eligible.length) throw Error('所选范围没有已配置且可同步的账号，请先检查接口设置。');
-      // Never send new modes to an older backend that would silently scan history.
-      const capability = await fetch(progressUrl, {cache: 'no-store'});
-      const capabilityResult = await capability.json();
-      if (!capability.ok || capabilityResult.data?.supportsModes !== true)
-        throw Error('后台尚未支持快速订单同步，请完成后台更新后再试。');
-      for (const account of eligible) states.set(account.id, {
-        name: account.name || `账号 ${account.id}`, pages: 0, received: 0, done: false, label: '同步中', message: ''});
-      paint();
-      timer = setInterval(poll, 1000);
-      // One serial page stream per account; accounts run concurrently using
-      // the backend's existing account locks and global request limiter.
-      await Promise.all(eligible.map(async account => {
-        const row = states.get(account.id);
-        try {
-          const response = await fetch('/api/orders/sync', {method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({accountId: account.id, mode, requestId})});
-          const result = await response.json();
-          if (!response.ok) throw Error(result.error || '订单同步失败');
-          const data = result.data;
-          if (data?.accountId !== account.id || data.requestId !== requestId) throw Error('订单返回账号或请求编号不匹配');
-          row.pages = data.pages; row.received = data.received;
-          row.label = `完成，已保存 ${data.imported} 条`;
-          row.message = data.message || '';
-          succeeded++;
-        } catch (error) { row.label = '失败'; row.message = error.message || '订单同步失败'; }
-        row.done = true; completed++; paint();
-        if (row.label !== '失败') {
-          // Refresh current filters after each committed account. open() has
-          // revision guards, so late reports never replace newer results.
-          try { window.orderShopCharts?.ordersSynced(account.id); } catch (_) {}
-          if (pageActive) await open();
-        }
-      }));
-    } catch (error) { status.textContent = `订单同步未完成：${error.message || '请稍后重试'}`; }
-    finally {
-      ended = true;
-      if (timer !== null) clearInterval(timer);
-      controller.abort();
-      syncingOrders = false; button.disabled = history.disabled = false;
-    }
-  }
   async function pollAutoSync() {
-    if (!pageActive || document.hidden || autoPollController || syncingOrders) return;
+    if (!pageActive || document.hidden || autoPollController) return;
     const request = ++autoRevision, filterRevision = revision;
     const controller = new AbortController(); autoPollController = controller;
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const response = await fetch('/api/orders/auto-sync', {cache: 'no-store', signal: controller.signal});
       const result = await response.json();
-      if (!pageActive || request !== autoRevision || syncingOrders) return;
+      if (!pageActive || request !== autoRevision) return;
       if (!response.ok || !Array.isArray(result.data?.accounts)) throw Error('状态暂不可用');
       const data = result.data, selected = el('statisticsAccount').value || 'all';
       const rows = data.accounts.filter(row => selected === 'all' || String(row.accountId) === selected);
@@ -377,8 +288,6 @@
     el('statisticsStart').value = el('statisticsEnd').value = beijingDate();
     dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
-    el('statisticsSyncOrders').addEventListener('click', () => syncOrders('recent'));
-    el('statisticsSyncHistory').addEventListener('click', () => syncOrders('history'));
     ['statisticsStart', 'statisticsEnd'].forEach(id => el(id).addEventListener('change', invalidate));
     el('statisticsAccount').addEventListener('change', open);
     [['statisticsToday', 0], ['statisticsWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {

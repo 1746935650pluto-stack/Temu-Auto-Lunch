@@ -7,7 +7,7 @@ const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
 function setup(clock = null, schedule = () => {}) {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAutoSyncStatus','statisticsSyncHistory','statisticsSyncOrders','statisticsSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  for (const id of ['statisticsAutoSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
@@ -280,112 +280,6 @@ test('single-day comparisons spread account bars across the plot and label each 
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const reply = (s, index, data, ok = true) => s.requests[index].resolve({ok, json: async () => ok ? {data} : {error:data}});
-
-async function startSync(s, accounts, button='statisticsSyncOrders') {
-  const offset=s.requests.length, pending=s.el(button).dispatch('click');
-  reply(s,offset,{accounts});await tick();
-  reply(s,offset+1,{supportsModes:true,entries:[]});await tick();
-  return {pending,offset};
-}
-function success(s,index,extra={}) {
-  const body=JSON.parse(s.requests[index].options.body);
-  reply(s,index,{...body,pages:1,received:100,imported:100,...extra});
-}
-
-test('quick sync has no cache delay and duplicate quick/history clicks are blocked', async () => {
-  const timers=[],s=setup(null,(fn,ms)=>timers.push({fn,ms}));
-  s.window.dataStatistics.setPage('dataStatistics');s.el('statisticsAccount').value='2';
-  const {pending}=await startSync(s,[{id:1,configured:true},{id:2,name:'Bao',configured:true}]);
-  assert.equal(s.requests.length,3);
-  assert.equal(JSON.parse(s.requests[2].options.body).mode,'recent');
-  assert.equal(JSON.parse(s.requests[2].options.body).accountId,2);
-  await s.el('statisticsSyncOrders').dispatch('click');await s.el('statisticsSyncHistory').dispatch('click');
-  assert.equal(s.requests.length,3);assert.equal(s.el('statisticsSyncHistory').disabled,true);
-  success(s,2);await tick();
-  assert.equal(s.requests.length,4);assert.equal(timers.length,0);
-  assert.match(s.el('statisticsSyncStatus').textContent,/已完成 1\/1.*成功 1/);
-  assert.match(s.el('statisticsSyncStatus').textContent,/已读取 1 页 \/ 100 条/);
-  reply(s,3,result('fresh'));await pending;
-  assert.match(s.el('statisticsRows').textContent,/fresh/);
-  assert.equal(s.el('statisticsSyncOrders').disabled,false);assert.equal(s.el('statisticsSyncHistory').disabled,false);
-  assert.equal(s.intervals.size,1);
-});
-
-test('different accounts start together, partial failure continues and each success refreshes', async () => {
-  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
-  const {pending}=await startSync(s,[{id:1,name:'NL',configured:true},{id:2,name:'Bao',configured:true},
-    {id:4,name:'LULU',configured:true},{id:5,configured:false},{id:6,configured:true,blocked:true}]);
-  assert.deepEqual(s.requests.slice(2).map(r=>JSON.parse(r.options.body).accountId),[1,2,4]);
-  reply(s,3,'该账号的订单正在同步，请稍候',false);await tick();
-  success(s,4,{message:'仅同步最近100条'});await tick();
-  assert.equal(s.requests[5].url.startsWith('/api/statistics/daily?'),true);
-  reply(s,5,result('first'));await tick();
-  assert.match(s.el('statisticsRows').textContent,/first/);
-  assert.match(s.el('statisticsSyncStatus').textContent,/已完成 2\/3/);
-  success(s,2);await tick();reply(s,6,result('last'));await pending;
-  assert.match(s.el('statisticsSyncStatus').textContent,/成功 2，失败 1，跳过 2/);
-  assert.match(s.el('statisticsSyncStatus').textContent,/Bao：失败/);
-  assert.match(s.el('statisticsSyncStatus').textContent,/LULU：完成.*仅同步最近100条/);
-});
-
-test('history uses its separate mode and progress rejects stale attempt data', async () => {
-  const s=setup();
-  const {pending}=await startSync(s,[{id:1,configured:true}], 'statisticsSyncHistory');
-  const body=JSON.parse(s.requests[2].options.body);assert.equal(body.mode,'history');
-  const poll=[...s.intervals.values()][0]();await tick();
-  reply(s,3,{entries:[{accountId:1,requestId:body.requestId,pages:4,received:400,status:'running'},
-    {accountId:1,requestId:'stale',pages:99,received:9900,status:'running'}]});await poll;
-  assert.match(s.el('statisticsSyncStatus').textContent,/4 页 \/ 400 条/);
-  const late=[...s.intervals.values()][0]();await tick();
-  success(s,2,{pages:5,received:450,imported:450,message:'历史补齐'});await pending;
-  const summary=s.el('statisticsSyncStatus').textContent;
-  reply(s,4,{entries:[{accountId:1,requestId:body.requestId,pages:4,received:400}]});await late;
-  assert.equal(s.el('statisticsSyncStatus').textContent,summary);
-  assert.match(summary,/5 页 \/ 450 条/);assert.equal(s.intervals.size,0);
-});
-
-test('changing filters during sync preserves targets and discards older report responses', async () => {
-  const s=setup();s.window.dataStatistics.setPage('dataStatistics');s.el('statisticsAccount').value='1';
-  const {pending}=await startSync(s,[{id:1,configured:true},{id:2,configured:true}]);
-  s.el('statisticsAccount').value='2';s.el('statisticsStart').value='2026-11-01';
-  const change=s.el('statisticsAccount').dispatch('change');
-  success(s,2);await tick();
-  assert.equal(s.requests.filter(r=>r.url==='/api/orders/sync').length,1);
-  const query=new URL(s.requests[4].url,'http://localhost').searchParams;
-  assert.equal(query.get('accountId'),'2');assert.equal(query.get('start'),'2026-11-01');
-  assert.equal(s.requests[3].options.signal.aborted,true);
-  reply(s,4,accountResult(2,'fresh',5));await pending;
-  reply(s,3,accountResult(2,'stale',1));await change;
-  assert.match(s.el('statisticsRows').textContent,/fresh/);assert.doesNotMatch(s.el('statisticsRows').textContent,/stale/);
-});
-
-test('unsupported backend never silently scans history', async () => {
-  const s=setup(),pending=s.el('statisticsSyncOrders').dispatch('click');
-  reply(s,0,{accounts:[{id:1,configured:true}]});await tick();
-  reply(s,1,'not found',false);await pending;
-  assert.equal(s.requests.length,2);assert.match(s.el('statisticsSyncStatus').textContent,/后台尚未支持/);
-  assert.equal(s.el('statisticsSyncOrders').disabled,false);
-});
-
-test('unconfigured accounts and mismatched replies cannot report success', async () => {
-  const s=setup();let pending=s.el('statisticsSyncOrders').dispatch('click');
-  reply(s,0,{accounts:[{id:1,configured:false}]});await pending;
-  assert.match(s.el('statisticsSyncStatus').textContent,/没有已配置/);
-  ({pending}=await startSync(s,[{id:1,configured:true}]));
-  success(s,3,{accountId:2});await pending;
-  assert.match(s.el('statisticsSyncStatus').textContent,/成功 0，失败 1/);
-  assert.match(s.el('statisticsSyncStatus').textContent,/不匹配/);
-});
-
-test('leaving statistics skips hidden refresh; reentry reads current range', async () => {
-  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
-  const {pending}=await startSync(s,[{id:1,configured:true}]);
-  s.window.dataStatistics.setPage('settings');success(s,2);await pending;
-  assert.equal(s.requests.length,3);
-  s.window.dataStatistics.setPage('dataStatistics');const refresh=s.window.dataStatistics.open();
-  assert.equal(new URL(s.requests[3].url,'http://localhost').searchParams.get('start'),s.el('statisticsStart').value);
-  reply(s,3,result('fresh'));await refresh;
-});
 
 const autoResult = (finishedAt=1000) => ({enabled:true,running:false,nextRunAt:1300,accounts:[
   {accountId:1,name:'NL',status:'completed',startedAt:finishedAt-10,finishedAt,orderPages:1,orderReceived:100,orders:100}]});

@@ -163,7 +163,7 @@ try {
         Start-Sleep -Milliseconds 500
         try {
             $taskHealth = Invoke-RestMethod "$taskUrl/api/health" -TimeoutSec 1
-            if ($taskHealth.runtimeVersion -eq '1.2.207' -and $taskHealth.resourceVersion -eq '1.2.207' -and $taskHealth.pendingUpdate -eq $false -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
+            if ($taskHealth.runtimeVersion -eq '1.2.208' -and $taskHealth.resourceVersion -eq '1.2.208' -and $taskHealth.pendingUpdate -eq $false -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
                 $taskVerified = $true
                 break
             }
@@ -176,7 +176,7 @@ try {
         Set-TaskPause $false
         $taskPauseChanged = $false
     }
-    Write-Host "Backend 1.2.207 is ready in APP_MODE=$taskAppMode. Original queue pause state restored." -ForegroundColor Green
+    Write-Host "Backend 1.2.208 is ready in APP_MODE=$taskAppMode. Original queue pause state restored." -ForegroundColor Green
     exit 0
 } catch {
     if ($taskPauseChanged -and -not $taskStopped) {

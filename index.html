@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.207" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.208" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.207">当前版本 V1.2.207</span>
+          <span class="app-version" data-resource-version="1.2.208">当前版本 V1.2.208</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -458,13 +458,10 @@
             <div class="statistics-quick-ranges" role="group" aria-label="快捷日期"><button class="button subtle" type="button" id="statisticsToday">今天</button><button class="button subtle" type="button" id="statisticsWeek">近 7 天</button></div>
             <label class="statistics-account-filter">妙手账号<select id="statisticsAccount"><option value="all">全部账号</option></select></label>
             <button class="button primary statistics-query" type="submit">查询统计</button>
-            <button type="button" class="button subtle statistics-export" id="statisticsSyncOrders" title="不同账号并行读取最近 100 条订单并合并到本地，保留历史。日期范围仅用于统计。">快速同步最近 100 条</button>
-            <button type="button" class="button subtle statistics-export" id="statisticsSyncHistory" title="不同账号并行补齐历史订单，每账号每次最多 20,000 条；保留已有历史，读满会提示。">补齐历史订单</button>
             <button type="button" class="button subtle statistics-export" id="statisticsExport" disabled><span aria-hidden="true">↓</span> 导出 CSV</button>
           </form>
           <p id="statisticsStatus" role="status" aria-live="polite">选择日期和账号后查询统计。</p>
           <p id="statisticsAutoSyncStatus" role="status" aria-live="polite">订单自动同步：每 5 分钟，各账号最近 100 条。</p>
-          <p id="statisticsSyncStatus" role="status" aria-live="polite" hidden></p>
           <div class="statistics-cards" id="statisticsCards"></div>
           <section class="statistics-data-panel" aria-label="账号数据展示">
             <div class="statistics-chart-tools">
@@ -778,24 +775,24 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./proportion-chart.js?v=1.2.207&build=2"></script>
-    <script src="./data-statistics.js?v=1.2.207"></script>
-    <script src="./order-shop-chart.js?v=1.2.207"></script>
-    <script src="./navigation-state.js?v=1.2.207"></script>
-    <script src="./account-context.js?v=1.2.207"></script>
-  <script src="./local-view-cache.js?v=1.2.207"></script>
-  <script src="./live-status.js?v=1.2.207"></script>
+    <script src="./proportion-chart.js?v=1.2.208&build=2"></script>
+    <script src="./data-statistics.js?v=1.2.208"></script>
+    <script src="./order-shop-chart.js?v=1.2.208"></script>
+    <script src="./navigation-state.js?v=1.2.208"></script>
+    <script src="./account-context.js?v=1.2.208"></script>
+  <script src="./local-view-cache.js?v=1.2.208"></script>
+  <script src="./live-status.js?v=1.2.208"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.207"></script>
-  <script src="./shared-automation.js?v=1.2.207"></script>
-  <script src="./pricing-workbench.js?v=1.2.207"></script>
-  <script src="./shipping-bindings.js?v=1.2.207"></script>
-  <script src="./app.js?v=1.2.207"></script>
+  <script src="./diagnostics-panel.js?v=1.2.208"></script>
+  <script src="./shared-automation.js?v=1.2.208"></script>
+  <script src="./pricing-workbench.js?v=1.2.208"></script>
+  <script src="./shipping-bindings.js?v=1.2.208"></script>
+  <script src="./app.js?v=1.2.208"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
-    <script src="./automatic-tasks.js?v=1.2.207"></script>
-    <script src="./desktop-ui.js?v=1.2.207"></script>
-    <script src="./size-reference.js?v=1.2.207"></script>
-    <script src="./live-editor.js?v=1.2.207"></script>
+    <script src="./automatic-tasks.js?v=1.2.208"></script>
+    <script src="./desktop-ui.js?v=1.2.208"></script>
+    <script src="./size-reference.js?v=1.2.208"></script>
+    <script src="./live-editor.js?v=1.2.208"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>
