@@ -5,15 +5,15 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
-function setup(clock = null) {
+function setup(clock = null, schedule = fn => { queueMicrotask(fn); }) {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  for (const id of ['statisticsSyncOrders','statisticsSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
   document.addEventListener = (name, callback) => events[name] = callback;
   const ClockDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
-  const context = {document, window: {}, Date: ClockDate, URLSearchParams, AbortController, Blob, URL, setTimeout,
+  const context = {document, window: {}, Date: ClockDate, URLSearchParams, AbortController, Blob, URL, setTimeout: schedule,
     openOrderAccount: id => opened.push(id), activeOrderAccountId: 2, activatePage: id => opened.push(id),
     fetch: (url, options) => new Promise(resolve => requests.push({url, options, resolve}))};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','proportion-chart.js'),'utf8'),context);
@@ -275,4 +275,91 @@ test('single-day comparisons spread account bars across the plot and label each 
   for(let index=1;index<=7;index++) assert.ok(svg.children.some(node=>node.textContent===`account-${index}`));
   assert.match(s.el('statisticsChartTitle').textContent,/订单数对比/);
   assert.equal(s.el('statisticsCards').children[0].children[0].textContent,'订单数');
+});
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const reply = (s, index, data, ok = true) => s.requests[index].resolve({ok, json: async () => ok ? {data} : {error:data}});
+
+test('successful sync waits out backend cache before refreshing, keeping duplicate clicks blocked', async () => {
+  const timers=[],s=setup({now:Date.parse('2026-11-13T01:00:00Z')},(fn,ms)=>timers.push({fn,ms}));
+  s.window.dataStatistics.setPage('dataStatistics');
+  const pending=s.el('statisticsSyncOrders').dispatch('click');
+  reply(s,0,{accounts:[{id:1,configured:true}]});await tick();
+  reply(s,1,{accountId:1});await tick();
+  assert.equal(s.requests.length,2);assert.equal(timers.length,1);assert.equal(timers[0].ms,16000);
+  assert.match(s.el('statisticsSyncStatus').textContent,/等待 16 秒/);
+  await s.el('statisticsSyncOrders').dispatch('click');assert.equal(s.requests.length,2);
+  timers[0].fn();await tick();assert.equal(s.requests.length,3);
+  reply(s,2,result('fresh'));await pending;assert.equal(s.el('statisticsSyncOrders').disabled,false);
+});
+
+test('sync selected account once and refresh current statistics after the cache expiry', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  s.el('statisticsAccount').value='2';
+  s.el('statisticsStart').value='2026-11-01';s.el('statisticsEnd').value='2026-11-03';
+  const pending=s.el('statisticsSyncOrders').dispatch('click');
+  await s.el('statisticsSyncOrders').dispatch('click');
+  assert.equal(s.requests.length,1);assert.equal(s.el('statisticsSyncOrders').disabled,true);
+  reply(s,0,{accounts:[{id:1,configured:true},{id:2,name:'Bao',configured:true}]});await tick();
+  assert.equal(s.requests[1].url,'/api/orders/sync');
+  assert.deepEqual(JSON.parse(s.requests[1].options.body),{accountId:2});
+  reply(s,1,{accountId:2,imported:10});await tick();
+  const query=new URL(s.requests[2].url,'http://localhost').searchParams;
+  assert.equal(query.get('accountId'),'2');assert.equal(query.get('start'),'2026-11-01');
+  assert.equal(query.get('end'),'2026-11-03');assert.deepEqual([...query.keys()].sort(), ['accountId','end','start']);
+  reply(s,2,result('fresh'));await pending;
+  assert.match(s.el('statisticsSyncStatus').textContent,/成功 1.*失败 0/);
+  assert.equal(s.el('statisticsSyncOrders').disabled,false);
+  assert.match(s.el('statisticsRows').textContent,/fresh/);
+});
+
+test('all-account sync is sequential, skips unavailable accounts, and continues after failure', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  const pending=s.el('statisticsSyncOrders').dispatch('click');
+  reply(s,0,{accounts:[{id:1,name:'NL',configured:true},{id:2,name:'Bao',configured:true},
+    {id:4,name:'LULU',configured:true},{id:5,configured:false},{id:6,configured:true,blocked:true}]});await tick();
+  assert.equal(s.requests.length,2);assert.equal(JSON.parse(s.requests[1].options.body).accountId,1);
+  reply(s,1,{accountId:1});await tick();assert.equal(s.requests.length,3);
+  reply(s,2,'该账号的订单正在同步，请稍候',false);await tick();
+  assert.equal(JSON.parse(s.requests[3].options.body).accountId,4);
+  reply(s,3,{accountId:4,message:'达到历史读取上限'});await tick();
+  assert.equal(s.requests.length,5);reply(s,4,result('fresh'));await pending;
+  assert.match(s.el('statisticsSyncStatus').textContent,/成功 2.*失败 1.*跳过 2/);
+  assert.match(s.el('statisticsSyncStatus').textContent,/Bao.*正在同步.*LULU.*读取上限/);
+});
+
+test('changing filters while syncing does not change frozen targets or overwrite newer filters', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');s.el('statisticsAccount').value='1';
+  const pending=s.el('statisticsSyncOrders').dispatch('click');
+  reply(s,0,{accounts:[{id:1,configured:true},{id:2,configured:true}]});await tick();
+  s.el('statisticsAccount').value='2';s.el('statisticsStart').value='2026-11-01';
+  const change=s.el('statisticsAccount').dispatch('change');
+  reply(s,1,{accountId:1});await tick();
+  assert.equal(JSON.parse(s.requests[1].options.body).accountId,1);
+  assert.equal(s.requests.filter(r=>r.url==='/api/orders/sync').length,1);
+  assert.equal(new URL(s.requests[3].url,'http://localhost').searchParams.get('accountId'),'2');
+  assert.equal(s.requests[2].options.signal.aborted,true);
+  reply(s,3,accountResult(2,'fresh',5));await pending;
+  reply(s,2,accountResult(2,'stale',1));await change;
+  assert.match(s.el('statisticsRows').textContent,/fresh/);assert.doesNotMatch(s.el('statisticsRows').textContent,/stale/);
+});
+
+test('unconfigured account or mismatched response cannot be reported as a successful sync', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  let pending=s.el('statisticsSyncOrders').dispatch('click');reply(s,0,{accounts:[{id:1,configured:false}]});await pending;
+  assert.equal(s.requests.length,1);assert.match(s.el('statisticsSyncStatus').textContent,/没有已配置/);
+  pending=s.el('statisticsSyncOrders').dispatch('click');reply(s,1,{accounts:[{id:1,configured:true}]});await tick();
+  reply(s,2,{accountId:2});await pending;
+  assert.equal(s.requests.length,3);assert.match(s.el('statisticsSyncStatus').textContent,/成功 0.*失败 1.*账号不匹配/);
+  assert.equal(s.el('statisticsSyncOrders').disabled,false);
+});
+
+test('leaving statistics avoids a hidden refresh and reentry reads the current date range', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  const pending=s.el('statisticsSyncOrders').dispatch('click');reply(s,0,{accounts:[{id:1,configured:true}]});await tick();
+  s.window.dataStatistics.setPage('settings');reply(s,1,{accountId:1});await pending;
+  assert.equal(s.requests.length,2);assert.equal(s.el('statisticsSyncOrders').disabled,false);
+  s.window.dataStatistics.setPage('dataStatistics');const refresh=s.window.dataStatistics.open();
+  assert.equal(new URL(s.requests[2].url,'http://localhost').searchParams.get('start'),s.el('statisticsStart').value);
+  reply(s,2,result('fresh'));await refresh;
 });

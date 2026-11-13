@@ -4,6 +4,7 @@
   const metrics = ['collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed', 'needsInput', 'orders', 'packages', 'quantity'];
   const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
   let revision = 0, current = null, requestController = null, viewMode = 'bar';
+  let syncingOrders = false, pageActive = false;
   const metricLabels = {...Object.fromEntries(metrics.map((key, index) => [key, headings[index + 2]])), failed: '编辑／发布异常'};
   const colors = ['#2f6fed','#0c987f','#e69520','#8954ce','#d64c75','#1795b3','#98713e','#506ab0','#6d9c32','#bf6339', '#6c5bba','#d87926','#248963','#a94378','#377fb1','#8b8932','#aa5844','#525cc2','#227b82','#a168ba'];
   function clearChart(message = '查询统计后显示图表。') {
@@ -191,7 +192,65 @@
       if (request === revision && error.name !== 'AbortError') el('statisticsStatus').textContent = `统计读取失败：${error.message}`;
     }
   }
+  async function syncOrders() {
+    if (syncingOrders) return;
+    syncingOrders = true;
+    const selected = el('statisticsAccount').value || 'all';
+    const button = el('statisticsSyncOrders'), status = el('statisticsSyncStatus');
+    button.disabled = true; button.textContent = '正在同步…';
+    status.hidden = false; status.textContent = '正在读取可同步账号…';
+    let succeeded = 0, lastSuccessAt = 0;
+    const failures = [], warnings = [];
+    try {
+      const response = await fetch('/api/miaoshou-accounts', {cache: 'no-store'});
+      const result = await response.json();
+      if (!response.ok || !Array.isArray(result.data?.accounts)) throw Error(result.error || '读取账号失败');
+      const accounts = [...new Map(result.data.accounts.filter(account =>
+        Number.isSafeInteger(account.id) && account.id > 0 &&
+        (selected === 'all' || String(account.id) === selected)).map(account => [account.id, account])).values()];
+      const eligible = accounts.filter(account => account.configured && !account.blocked);
+      const skipped = accounts.length - eligible.length;
+      if (!eligible.length) throw Error('所选范围没有已配置且可同步的账号，请先检查接口设置。');
+      // Freeze the target accounts at click time, and read them sequentially.
+      for (let index = 0; index < eligible.length; index++) {
+        const account = eligible[index], name = account.name || `账号 ${account.id}`;
+        button.textContent = `同步中 ${index + 1}/${eligible.length}`;
+        status.textContent = `正在同步 ${name}（${index + 1}/${eligible.length}），已成功 ${succeeded} 个账号。`;
+        try {
+          const response = await fetch('/api/orders/sync', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({accountId: account.id})});
+          const result = await response.json();
+          if (!response.ok) throw Error(result.error || '订单同步失败');
+          if (result.data?.accountId !== account.id) throw Error('订单返回账号不匹配');
+          succeeded++;
+          lastSuccessAt = Date.now();
+          if (result.data.message) warnings.push(`${name}：${result.data.message}`);
+          window.orderShopCharts?.ordersSynced(account.id);
+        } catch (error) { failures.push(`${name}：${error.message || '订单同步失败'}`); }
+      }
+      status.textContent = `订单同步完成：成功 ${succeeded} 个账号，失败 ${failures.length} 个` +
+        (skipped ? `，跳过 ${skipped} 个未配置或不可用账号` : '') + '。' + [...failures, ...warnings].join('；');
+    } catch (error) { status.textContent = `订单同步未完成：${error.message || '请稍后重试'}`; }
+    finally {
+      if (succeeded) {
+        // The running backend caches reports for 15 seconds and rejects
+        // unknown query parameters. Wait out that TTL instead of inventing
+        // cache-busting parameters unsupported by older backends.
+        const remaining = Math.max(0, 16000 - (Date.now() - lastSuccessAt));
+        const summary = status.textContent;
+        if (remaining) {
+          status.textContent = `${summary} 正在更新统计，最多等待 ${Math.ceil(remaining / 1000)} 秒…`;
+          await new Promise(resolve => setTimeout(resolve, remaining));
+        }
+        // Refresh the current filter, never a stale selection from click time.
+        if (pageActive) await open();
+        status.textContent = summary;
+      }
+      syncingOrders = false; button.disabled = false; button.textContent = '同步订单';
+    }
+  }
   function setPage(page) {
+    pageActive = page === 'dataStatistics';
     // Navigation starts with today's Beijing date. In-page queries and account
     // changes still use the user's selected range via open().
     if (page === 'dataStatistics') {
@@ -224,6 +283,7 @@
     el('statisticsStart').value = el('statisticsEnd').value = beijingDate();
     dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
+    el('statisticsSyncOrders').addEventListener('click', syncOrders);
     ['statisticsStart', 'statisticsEnd'].forEach(id => el(id).addEventListener('change', invalidate));
     el('statisticsAccount').addEventListener('change', open);
     [['statisticsToday', 0], ['statisticsWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {

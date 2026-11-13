@@ -805,6 +805,7 @@ details.shared-queue-activity > summary::marker { color: #4776bc; }
 .statistics-account-filter { flex:1; max-width:220px; min-width:135px!important; }
 .statistics-filters .statistics-query { min-height:36px; margin-left:auto; padding:8px 17px; color:white; background:#2563eb; border:1px solid #2563eb; border-radius:7px; box-shadow:none; font-size:12px; font-weight:500; }
 #statisticsStatus { margin:9px 2px 14px; color:#94a3b8; font-size:11px; line-height:1.7; overflow-wrap:anywhere; }
+#statisticsSyncStatus { margin:0 2px 14px; color:#475569; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
 .statistics-cards { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin:0 0 18px; }
 .statistics-kpi { min-width:0; padding:13px 15px 11px; background:#fff; border:1px solid #e3e9f1; border-radius:11px; }
 button.statistics-kpi { text-align:left; cursor:pointer; font:inherit; transition:border-color .15s,background .15s; }
