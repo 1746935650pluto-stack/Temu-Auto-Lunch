@@ -180,6 +180,76 @@
       node.append(parent);
     });
   }
+  function targetPicker(selectNode) {
+    const view = element('section', '', 'shared-target-picker');
+    view.setAttribute('aria-label', '目标店铺');
+    const heading = element('div', '', 'shared-target-heading');
+    const title = element('div');
+    title.append(element('strong', '目标店铺'), element('small', '切换账号后点击店铺，即可多选'));
+    const count = element('span', '已选 0 家', 'shared-target-count');
+    heading.append(title, count);
+    const tabs = element('div', '', 'shared-target-tabs'); tabs.setAttribute('aria-label', '目标账号');
+    const tools = element('div', '', 'shared-target-tools');
+    const search = input('sharedTargetSearch', '', 'search');
+    search.placeholder = '搜索当前账号的店铺名称或 ID'; search.setAttribute('aria-label', '搜索店铺名称或 ID');
+    const clear = element('button', '清空已选', 'shared-target-clear'); clear.type = 'button';
+    tools.append(search, clear);
+    const grid = element('div', '', 'shared-target-grid'); grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', '店铺列表');
+    const footer = element('div', '', 'shared-target-footer');
+    const info = element('span'); info.setAttribute('aria-live', 'polite');
+    const navigation = element('div', '', 'shared-target-navigation');
+    const previous = element('button', '上一页'); previous.type = 'button';
+    const next = element('button', '下一页'); next.type = 'button';
+    navigation.append(previous, next); footer.append(info, navigation);
+    selectNode.hidden = true;
+    view.append(selectNode, heading, tabs, tools, grid, footer);
+    let account = '', page = 1;
+    function refresh(focusValue = "", focusTab = "") {
+      const groups = state.config?.targets || [];
+      if (!groups.some(group => String(group.accountId) === account)) account = groups.length ? String(groups[0].accountId) : '';
+      const chosen = new Set([...selectNode.selectedOptions].map(item => item.value));
+      const disabled = selectNode.disabled;
+      count.textContent = `已选 ${chosen.size} 家`;
+      tabs.replaceChildren();
+      for (const group of groups) {
+        const id = String(group.accountId), selected = group.shops.filter(shop => chosen.has(`${id}:${shop.shopId}`)).length;
+        const tab = element('button', `${group.name}${selected ? ` · ${selected}` : ''}`, 'shared-target-tab');
+        tab.type = 'button'; tab.disabled = disabled; tab.setAttribute('aria-pressed', String(id === account));
+        tab.addEventListener('click', () => { account = id; page = 1; refresh('', id); }); tabs.append(tab);
+        if (id === focusTab) tab.focus({preventScroll:true});
+      }
+      search.disabled = disabled; clear.disabled = disabled || !chosen.size;
+      const group = groups.find(row => String(row.accountId) === account);
+      const query = search.value.trim().toLocaleLowerCase();
+      const shops = (group?.shops || []).filter(shop => `${shop.shopNick || shop.platformShopName || shop.shopId} ${shop.shopId}`.toLocaleLowerCase().includes(query));
+      const pages = Math.max(1, Math.ceil(shops.length / 16)); page = Math.min(page, pages);
+      grid.replaceChildren();
+      for (const shop of shops.slice((page - 1) * 16, page * 16)) {
+        const value = `${account}:${shop.shopId}`;
+        const card = element('label', '', 'shared-target-card');
+        const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.checked = chosen.has(value); checkbox.disabled = disabled;
+        const text = element('span', '', 'shared-target-card-text');
+        text.append(element('strong', shop.shopNick || shop.platformShopName || String(shop.shopId)), element('small', `ID ${shop.shopId}`));
+        card.classList.toggle('selected', checkbox.checked); card.append(checkbox, text);
+        checkbox.addEventListener('change', () => {
+          const option = [...selectNode.options].find(item => item.value === value);
+          if (option) option.selected = checkbox.checked;
+          refresh(value);
+        });
+        grid.append(card);
+        if (value === focusValue) checkbox.focus({preventScroll:true});
+      }
+      if (!shops.length) grid.append(element('p', groups.length ? '没有找到匹配的店铺' : '正在加载店铺…', 'shared-target-empty'));
+      info.textContent = `${shops.length} 家店铺 · 第 ${page} / ${pages} 页`;
+      previous.disabled = disabled || page <= 1; next.disabled = disabled || page >= pages;
+    }
+    search.addEventListener('input', () => { page = 1; refresh(); });
+    clear.addEventListener('click', () => { for (const option of selectNode.options) option.selected = false; refresh(); });
+    previous.addEventListener('click', () => { if (page > 1) { page--; refresh(); } });
+    next.addEventListener('click', () => { page++; refresh(); });
+    selectNode.picker = {refresh};
+    return view;
+  }
   function chosenTargets(node) {
     return [...node.selectedOptions].map(o => {const [targetAccountId, shopId] = o.value.split(':').map(Number); return {targetAccountId, shopId};});
   }
@@ -798,6 +868,7 @@
     ['sharedPoolSource', 'sharedJobsSource', 'sharedJobsAccount'].forEach(id => accountOptions($(id)));
     const selected = [...$('sharedTargets').selectedOptions].map(o => o.value);
     targetOptions($('sharedTargets'), selected);
+    $('sharedTargets').picker?.refresh();
     updateShopOptions();
     updatePersonOptions();
     const site = $('sharedSite'), previousSite = site.value || 'US'; site.replaceChildren();
@@ -1359,7 +1430,7 @@
     const controls=element('div','','shared-config');
     const mode=select('sharedMode',[['manual','手动跨账号多选店铺'],['personnel','按来源人员绑定店铺']]);
     const targets=select('sharedTargets',[]);targets.multiple=true;targets.size=7;
-    controls.append(field('保存方式',mode),button('人员店铺绑定／刷新归属',bindPeople),button('刷新账号与店铺',()=>config(true)),field('目标店铺（按住 Ctrl 多选）',targets),
+    controls.append(field('保存方式',mode),button('人员店铺绑定／刷新归属',bindPeople),button('刷新账号与店铺',()=>config(true)),targetPicker(targets),
       field('发布站点',select('sharedSite',[['US','美国站 (US)']])),
       field('申报价方式',select('sharedPriceMode',[['floor','固定下限 X ～ X+20'],['source_multiplier','原始 SKU 价格倍数'],['source_add','原价格 + X']])),
       field('申报价下限 X',input('sharedPrice',preferences.price || $('automationSkuPrice')?.value || '160','number')),
@@ -1372,7 +1443,7 @@
         const result=await api('remove',{items,confirmation:'REMOVE_SHARED_POOL_ITEMS'});state.pool.selected.clear();
         notice(`已移出 ${result.removed.length} 件。${result.errors.map(e=>`${e.sourceAccountId}:${e.detailId} ${e.message}`).join('；')}`);await refresh('pool');
       }));
-    mode.addEventListener('change',()=>{targets.disabled=mode.value==='personnel';});
+    mode.addEventListener('change',()=>{targets.disabled=mode.value==='personnel';targets.picker.refresh();});
     pool.append(controls,toolbar('pool'));
     const poolTools=element('div','','shared-pool-list-tools');
     const poolPager=element('div','','shared-pager');poolPager.id='sharedPoolPager';
