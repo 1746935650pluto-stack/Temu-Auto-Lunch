@@ -1,6 +1,33 @@
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
 $taskUrl = 'http://127.0.0.1:8787'
+$taskOriginalPaused = $null
+$taskPauseChanged = $false
+$taskStopped = $false
+$taskBackupDone = $false
+
+function Set-TaskPause([bool]$paused) {
+    $body = @{paused=$paused; confirmation='SET_SHARED_AUTOMATION_PAUSE'} | ConvertTo-Json
+    Invoke-RestMethod "$taskUrl/api/automation/shared/pause" -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null
+}
+
+function Wait-TaskDrain {
+    for ($taskDrainAttempt = 0; $taskDrainAttempt -lt 90; $taskDrainAttempt++) {
+        $state = (Invoke-RestMethod "$taskUrl/api/automation/shared/drain-check" -TimeoutSec 5).data
+        if ($null -eq $state.activeTransfers -or $null -eq $state.paused -or $null -eq $state.drained) {
+            throw 'Cannot verify shared task activity; backend has not been stopped.'
+        }
+        if ($state.drained -eq $true -and -not ($state.running -or $state.editing -or $state.publishing -or $state.inFlightTransfers -or $state.publishWorker -or $state.autoTasksBusy -or $state.reloading)) {
+            if ($state.syncing) { Write-Host 'Read-only synchronization is active. Completed snapshots remain; interrupted scans will be retried by scheduled synchronization.' }
+            return $state
+        }
+        if ($taskDrainAttempt % 5 -eq 0) {
+            Write-Host "Waiting for active requests: running=$($state.running), publishing=$($state.publishing), copies=$($state.inFlightTransfers), scheduler=$($state.editing), automatic=$($state.autoTasksBusy)."
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw 'Active requests did not drain in time. Backend was not stopped; try again after current work finishes.'
+}
 
 function Get-ConfiguredAppMode {
     $taskEnvRoot = if ($env:TEMU_DATA_ROOT) { $env:TEMU_DATA_ROOT } else { $taskRoot }
@@ -64,14 +91,22 @@ try {
             $taskHealth = Invoke-RestMethod "$taskUrl/api/health" -TimeoutSec 3
             $taskBackupVersion = $taskHealth.version
             if ($null -eq $taskHealth.miaoShouConfigured) { throw 'Port response is not the workbench.' }
-            $taskAccounts = (Invoke-RestMethod "$taskUrl/api/miaoshou-accounts" -TimeoutSec 3).data.accounts
             $taskActivity = $null
             if ($taskHealth.sharedAutomation) {
                 $taskActivity = (Invoke-RestMethod "$taskUrl/api/automation/shared/drain-check" -TimeoutSec 3).data
                 if ($null -eq $taskActivity.activeTransfers) {
                     throw 'Cannot verify shared task activity. No process was stopped.'
                 }
-                if ($taskActivity.drained -ne $true) { throw 'Pause automatic processing and wait for all active requests before restarting.' }
+                if ($null -eq $taskActivity.paused) { throw 'Cannot verify shared pause state.' }
+                $taskOriginalPaused = [bool]$taskActivity.paused
+                if (-not $taskOriginalPaused) {
+                    # Mark before the request so a lost response still restores
+                    # the original state if preflight later fails.
+                    $taskPauseChanged = $true
+                    Write-Host 'Pausing new task claims for a controlled restart...'
+                    Set-TaskPause $true
+                }
+                $taskActivity = Wait-TaskDrain
                 $taskPaused = $taskActivity.paused -eq $true
                 if ($null -eq $taskActivity.paused -and ($taskActivity.activeTransfers -or $taskActivity.editing -or $taskActivity.publishing)) {
                     throw 'The current backend cannot verify paused work. Wait for queues to finish before restarting.'
@@ -96,9 +131,13 @@ try {
             # allowing durable queued work to survive the controlled restart.
             $taskResponsive = $true
         } catch {
-            if ($_.Exception.Message -match 'Tasks are still running|Cannot verify shared') { throw }
-            throw 'Cannot verify that all account and shared tasks are idle. No process was stopped. Check the backend before restarting.'
+            throw "Restart preflight failed: $($_.Exception.Message)"
         }
+        # Keep the verified backend alive if the backup fails.
+        Write-Host 'Creating and verifying a consistent database backup...'
+        Backup-TaskDatabases
+        $taskBackupDone = $true
+        if ($taskHealth.sharedAutomation) { $taskActivity = Wait-TaskDrain }
         # Recheck ownership immediately before stopping the verified Python service.
         $taskOwner = @(Get-TaskPortOwners)
         if ($taskOwner.Count -ne 1 -or $taskOwner[0] -ne $taskProcessId) { throw 'Port ownership changed. Please retry.' }
@@ -108,9 +147,10 @@ try {
             Write-Host "Stopping unresponsive verified workbench process $taskProcessId..."
         }
         Stop-Process -Id $taskProcessId -ErrorAction Stop
+        $taskStopped = $true
         if (-not (Wait-TaskProcessExit $taskProcessId)) { throw 'The old workbench did not exit within 5 seconds. Close its Python process in Task Manager, then run this file again.' }
     }
-    Backup-TaskDatabases
+    if (-not $taskBackupDone) { Backup-TaskDatabases }
     $env:HOST = '127.0.0.1'
     $env:PORT = '8787'
     # Load the explicit local setting for this child process so an inherited
@@ -123,17 +163,26 @@ try {
         Start-Sleep -Milliseconds 500
         try {
             $taskHealth = Invoke-RestMethod "$taskUrl/api/health" -TimeoutSec 1
-            if ($taskHealth.version -eq '1.2.204' -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
+            if ($taskHealth.runtimeVersion -eq '1.2.205' -and $taskHealth.resourceVersion -eq '1.2.205' -and $taskHealth.pendingUpdate -eq $false -and $taskHealth.concurrentEditing -eq $true -and $taskHealth.mode -eq $taskAppMode) {
                 $taskVerified = $true
                 break
             }
         } catch { }
-        if ($taskStarted.HasExited) { break }
+        # py.exe may exit after handing off to python.exe; verify the actual
+        # listener rather than treating launcher exit as backend failure.
     }
     if (-not $taskVerified) { throw "Startup could not be verified in APP_MODE=$taskAppMode. Check .env and run: py -3 server.py" }
-    Write-Host "Backend 1.2.204 is ready in APP_MODE=$taskAppMode. Paused queues survive a controlled restart and resume on request." -ForegroundColor Green
+    if ($taskPauseChanged) {
+        Set-TaskPause $false
+        $taskPauseChanged = $false
+    }
+    Write-Host "Backend 1.2.205 is ready in APP_MODE=$taskAppMode. Original queue pause state restored." -ForegroundColor Green
     exit 0
 } catch {
+    if ($taskPauseChanged -and -not $taskStopped) {
+        try { Set-TaskPause $false; $taskPauseChanged = $false }
+        catch { Write-Host 'Could not restore automatic processing; it remains paused. Resume it after checking the backend.' -ForegroundColor Yellow }
+    }
     if ($_.Exception.Message -match '拒绝访问|Access is denied') {
         Write-Host 'The verified old backend cannot be stopped by this Windows account. In Task Manager, end its Python process, then run restart-backend.cmd again.' -ForegroundColor Red
     } else {
