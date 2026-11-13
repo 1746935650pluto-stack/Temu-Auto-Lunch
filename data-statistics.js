@@ -5,6 +5,8 @@
   const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
   let revision = 0, current = null, requestController = null, viewMode = 'bar';
   let syncingOrders = false, pageActive = false;
+  let autoPollTimer = null, autoPollController = null, autoRevision = 0;
+  const autoCompletions = new Map();
   const metricLabels = {...Object.fromEntries(metrics.map((key, index) => [key, headings[index + 2]])), failed: '编辑／发布异常'};
   const colors = ['#2f6fed','#0c987f','#e69520','#8954ce','#d64c75','#1795b3','#98713e','#506ab0','#6d9c32','#bf6339', '#6c5bba','#d87926','#248963','#a94378','#377fb1','#8b8932','#aa5844','#525cc2','#227b82','#a168ba'];
   function clearChart(message = '查询统计后显示图表。') {
@@ -107,6 +109,16 @@
       swatch.style.backgroundColor = color(account); name.textContent = account.name; item.append(swatch, name); return item;
     }));
     el('statisticsChartHint').textContent = maximum ? '悬停或聚焦柱体查看数值' + (metric === 'orders' ? ' · 点击柱体查看对应账号订单' : '') : '当前筛选下该指标均为 0。';
+  }
+  function formatOrderAutoSync(autoSync) {
+    if (!autoSync) return '自动同步：等待后台更新启用';
+    if (!autoSync?.enabled) return '自动同步：未启用';
+    const minutes = Math.max(1, Math.round(Number(autoSync.intervalSeconds || 300) / 60));
+    if (autoSync.running) return `自动同步：正在同步订单（每 ${minutes} 分钟，最近 100 条）`;
+    const next = new Date(Number(autoSync.nextRunAt || 0) * 1000);
+    if (Number.isNaN(next.getTime()) || next.getTime() <= 0) return `自动同步：每 ${minutes} 分钟，最近 100 条`;
+    const time = new Intl.DateTimeFormat('zh-CN', {timeZone:'Asia/Shanghai', hour:'2-digit', minute:'2-digit', hourCycle:'h23'}).format(next);
+    return `自动同步：每 ${minutes} 分钟，最近 100 条 · 下次 ${time}`;
   }
   function beijingDate(offset = 0) {
     return new Date(Date.now() + 8 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
@@ -281,8 +293,56 @@
       syncingOrders = false; button.disabled = history.disabled = false;
     }
   }
+  async function pollAutoSync() {
+    if (!pageActive || document.hidden || autoPollController || syncingOrders) return;
+    const request = ++autoRevision, filterRevision = revision;
+    const controller = new AbortController(); autoPollController = controller;
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch('/api/orders/auto-sync', {cache: 'no-store', signal: controller.signal});
+      const result = await response.json();
+      if (!pageActive || request !== autoRevision || syncingOrders) return;
+      if (!response.ok || !Array.isArray(result.data?.accounts)) throw Error('状态暂不可用');
+      const data = result.data, selected = el('statisticsAccount').value || 'all';
+      const rows = data.accounts.filter(row => selected === 'all' || String(row.accountId) === selected);
+      let changed = false;
+      for (const row of rows) {
+        if (row.status !== 'completed' || !row.finishedAt) continue;
+        const token = `${row.startedAt}:${row.finishedAt}`;
+        if (autoCompletions.get(row.accountId) !== token) changed = true;
+      }
+      const time = data.nextRunAt ? new Date(data.nextRunAt * 1000).toLocaleTimeString('zh-CN',
+        {timeZone: 'Asia/Shanghai', hour12: false}) : '—';
+      const status = el('statisticsAutoSyncStatus'); status.style.whiteSpace = 'pre-line';
+      status.textContent = data.enabled ? `订单自动同步：每 5 分钟，各账号最近 100 条 · ${data.running ? '同步中' : `下次 ${time}（北京时间）`}` : '订单自动同步：未启用';
+      status.textContent += rows.length ? '\n' + rows.map(row => {
+        const label = {completed: '已完成', running: '同步中', queued: '等待中', partial: '本轮未完成', failed: '失败', interrupted: '已中断'}[row.status] || '等待首次同步';
+        return `${row.name}：${label} · ${row.orderPages || 0} 页 / ${row.orderReceived || 0} 条` + (row.orderError ? ` · ${row.orderError}` : '');
+      }).join('\n') : '';
+      // Respect unsent date edits, current reads, and late filter changes.
+      if (changed && current && revision === filterRevision) {
+        await open();
+        if (current && pageActive && request === autoRevision) {
+          for (const row of rows) if (row.status === 'completed' && row.finishedAt)
+            autoCompletions.set(row.accountId, `${row.startedAt}:${row.finishedAt}`);
+        }
+      }
+    } catch (error) {
+      if (pageActive && request === autoRevision && error.name !== 'AbortError')
+        el('statisticsAutoSyncStatus').textContent = '自动订单同步状态暂不可用，稍后自动重试；后台定时任务不受影响。';
+    } finally {
+      clearTimeout(timeout);
+      if (autoPollController === controller) autoPollController = null;
+    }
+  }
   function setPage(page) {
     pageActive = page === 'dataStatistics';
+    if (pageActive && autoPollTimer === null) autoPollTimer = setInterval(pollAutoSync, 15000);
+    if (!pageActive) {
+      if (autoPollTimer !== null) clearInterval(autoPollTimer);
+      autoPollTimer = null; autoRevision++;
+      autoPollController?.abort(); autoPollController = null;
+    }
     // Navigation starts with today's Beijing date. In-page queries and account
     // changes still use the user's selected range via open().
     if (page === 'dataStatistics') {
@@ -306,6 +366,8 @@
     return '"' + text.replace(/"/g, '""') + '"';
   }
   document.addEventListener('DOMContentLoaded', () => {
+    // Install the order module formatter after the legacy app entry loads.
+    window.orderAutoSyncText = formatOrderAutoSync;
     el('statisticsMetric').value = 'orders';
     chartView('bar');
     el('statisticsMetric').addEventListener('change', renderChart);

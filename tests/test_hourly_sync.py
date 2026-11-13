@@ -1,6 +1,7 @@
 """Whole-box import uses isolated databases and synthetic vendor reads only."""
 import os
 import unittest
+from threading import Barrier
 from unittest.mock import patch
 
 import server
@@ -15,7 +16,7 @@ class HourlySyncTests(unittest.TestCase):
 
     def setUp(self):
         fixtures.CollectionAccountTests.setUp(self)
-        for key in ('SHARED_SERVICES', 'COLLECTION_SYNCS', 'COLLECTION_READ_CACHES'):
+        for key in ('SHARED_SERVICES', 'COLLECTION_SYNCS', 'COLLECTION_READ_CACHES', 'ORDER_AUTO_SYNCS'):
             mocked = patch.object(server, key, {})
             mocked.start(); self.addCleanup(mocked.stop)
         self.now = 1000
@@ -108,7 +109,7 @@ class HourlySyncTests(unittest.TestCase):
         self.assertFalse(self.service.tick(launch=False))
         for account in (1, 2):
             result = self.service.snapshot(account)['result']
-            self.assertEqual(result['orders'], 1)
+            self.assertIsNone(result['orders'])
             self.assertEqual(result['added'], 1)
         self.service.set_enabled(False)
         reopened = HourlySync(server, self.service.path, clock=lambda: self.now)
@@ -117,10 +118,10 @@ class HourlySyncTests(unittest.TestCase):
         self.assertTrue(all(path in {server.HALF_BOX_LIST, server.HALF_SITE_DETAIL, server.MIAOSHOU_PACKAGE_LIST_PATH}
                             for _, path, _ in self.calls))
 
-    def test_orders_only_schedule_runs_every_half_hour_without_importing_collection(self):
+    def test_orders_only_schedule_runs_every_five_minutes_without_importing_collection(self):
         service = HourlySync(server, self.service.path.with_name('order-auto-sync-test.sqlite3'),
-                             interval=1800, clock=lambda: self.now, orders_only=True)
-        self.now += 1800
+                             interval=300, clock=lambda: self.now, orders_only=True)
+        self.now += 300
         accounts = service.tick(launch=False)
         self.assertEqual([account['id'] for account in accounts], [1, 2])
         service._run(accounts, True)
@@ -198,5 +199,85 @@ class HourlySyncTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
 
-if __name__ == '__main__':
-    unittest.main()
+
+    def order_service(self):
+        return HourlySync(server, self.service.path.with_name('orders-test.sqlite3'),
+                          interval=300, clock=lambda: self.now, orders_only=True)
+
+    def test_auto_orders_parallel_single_page_merge_and_cache_invalidation(self):
+        service = self.order_service()
+        for account in (1, 2):
+            server.order_store(account).upsert([{'packageId': 999, 'orderNo': 'old'}])
+        barrier = Barrier(2)
+        calls = []
+        def read(client, path, payload):
+            self.assertEqual(path, server.MIAOSHOU_PACKAGE_LIST_PATH)
+            calls.append((client.account_id, payload.copy()))
+            barrier.wait(timeout=3)
+            return {'result': 'success', 'code': 'success', 'data': {'total': 5000, 'packageList': [
+                {'packageId': i, 'orderNo': str(i)} for i in range(100)]}}
+        accounts = service.start_sync(None, launch=False)
+        with patch.object(server.MiaoShouClient, 'post', read), \
+             patch.object(server.DAILY_STATISTICS, 'invalidate') as invalidate:
+            service._run(accounts, True)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(p['page'] == 1 and p['pageSize'] == 100 for _, p in calls))
+        self.assertEqual(sorted(c.args[0] for c in invalidate.call_args_list), [1, 2], service.results)
+        for account in (1, 2):
+            result = service.snapshot(account)['result']
+            self.assertEqual((result['status'], result['orders'], result['orderPages'], result['orderReceived']),
+                             ('completed', 100, 1, 100))
+            self.assertEqual(server.order_store(account).summary()['count'], 101)
+        self.assertFalse(service.running)
+        self.assertEqual(server.ACCOUNT_MUTATIONS_ACTIVE, 0)
+
+    def test_orders_due_during_editing_do_not_overlap_another_round(self):
+        service = self.order_service()
+        self.now += 300
+        with patch.object(server.shared_automation(), 'activity', return_value={
+                'editing': True, 'publishing': True, 'activeTransfers': 1}):
+            accounts = service.tick(launch=False)
+        self.assertEqual(len(accounts), 2)
+        self.assertFalse(service.tick(launch=False))
+        service._run(accounts, True)
+        self.assertEqual(service.next_run, self.now + 300)
+        self.assertFalse(service.tick(launch=False))
+
+    def test_busy_account_is_skipped_others_finish_without_overwriting(self):
+        service = self.order_service()
+        server.order_store(2).upsert([{'packageId': 999, 'orderNo': 'old'}])
+        accounts = service.start_sync(None, launch=False)
+        with server.ORDER_SYNC_LOCKS[2]:
+            service._run(accounts, True)
+        self.assertEqual(service.snapshot(1)['result']['status'], 'completed')
+        self.assertIn('本轮已跳过', service.snapshot(2)['result']['orderError'])
+        self.assertEqual(server.order_store(2).summary()['count'], 1)
+
+    def test_interval_upgrade_clamps_old_deadline_preserves_disabled(self):
+        path = self.service.path.with_name('upgrade-orders.sqlite3')
+        old = HourlySync(server, path, interval=1800, clock=lambda: self.now, orders_only=True)
+        old.set_enabled(False)
+        new = HourlySync(server, path, interval=300, clock=lambda: self.now, orders_only=True)
+        self.assertEqual(new.next_run, self.now + 300)
+        self.assertFalse(new.enabled)
+        new.set_enabled(True)
+        self.assertFalse(new.tick(launch=False))
+        self.assertEqual(self.service.interval, 3600)
+
+    def test_hourly_collection_no_longer_duplicates_order_fetches(self):
+        accounts = self.service.start_sync(None, launch=False)
+        with patch.object(self.service, '_orders') as orders, patch.object(self.service, '_collection'):
+            self.service._run(accounts, True)
+        orders.assert_not_called()
+
+    def test_auto_status_route_is_readonly_and_scope_filtered(self):
+        service = self.order_service()
+        with patch.object(server, 'order_auto_sync', return_value=service):
+            status, body = self.request('GET', '/api/orders/auto-sync')
+            self.assertEqual(status, 200)
+            self.assertEqual(body['data']['intervalSeconds'], 300)
+            self.assertEqual({a['accountId'] for a in body['data']['accounts']}, {1, 2})
+            self.assertTrue(all(a['orders'] is None for a in body['data']['accounts']))
+            self.assertEqual(self.request('GET', '/api/orders/auto-sync',
+                             headers={'Origin': 'https://example.test'})[0], 403)
+        self.assertEqual(self.calls, [])

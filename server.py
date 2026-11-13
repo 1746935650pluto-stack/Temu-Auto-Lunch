@@ -74,7 +74,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.206'
+APP_VERSION = '1.2.207'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -356,7 +356,7 @@ def order_auto_sync():
     path = ORDER_SYNC_STORE.path.parent / 'order_auto_sync.sqlite3'
     with ORDER_AUTO_SYNCS_LOCK:
         if path not in ORDER_AUTO_SYNCS:
-            ORDER_AUTO_SYNCS[path] = HourlySync(sys.modules[__name__], path, interval=30 * 60, orders_only=True)
+            ORDER_AUTO_SYNCS[path] = HourlySync(sys.modules[__name__], path, interval=5 * 60, orders_only=True)
         return ORDER_AUTO_SYNCS[path]
 
 
@@ -3365,6 +3365,25 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
             except (sqlite3.Error, OSError):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机统计读取未完成，请稍后刷新；未改动商品或队列')
+            return
+        if route.path == '/api/orders/auto-sync':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页查询')
+                return
+            try:
+                service = order_auto_sync()
+                data = service.snapshot()
+                data['accounts'] = []
+                for account in miaoshou_account_slots():
+                    if not account['configured'] or account.get('blocked'):
+                        continue
+                    result = service.snapshot(account['id'])['result'] or {}
+                    data['accounts'].append({'accountId': account['id'], 'name': account['name'],
+                        **{key: result.get(key) for key in ('status', 'orders', 'orderPages',
+                            'orderReceived', 'orderError', 'finishedAt', 'startedAt')}})
+                self._json(HTTPStatus.OK, {'data': data})
+            except (ValueError, sqlite3.Error):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '自动订单同步状态暂不可用')
             return
         if route.path == '/api/orders/sync-progress':
             if not self._same_origin():

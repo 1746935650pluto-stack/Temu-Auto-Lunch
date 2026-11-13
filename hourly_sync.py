@@ -1,4 +1,5 @@
 """Read-only collection import and hourly account sync, independent of browsers."""
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from copy import deepcopy
 import json
@@ -19,6 +20,10 @@ class HourlySync:
             stored = {row[0]: json.loads(row[1]) for row in db.execute('SELECT key,value FROM collection_sync_state')}
         self.enabled = stored.get('enabled', True)
         self.next_run = stored.get('nextRunAt', self.clock() + interval)
+        if orders_only:
+            # A shorter order interval takes effect without waiting for an old
+            # half-hour deadline; preserve already due work and disabled state.
+            self.next_run = min(self.next_run, self.clock() + interval)
         self.results = stored.get('accounts', {})
         for result in self.results.values():
             if result.get('status') in {'running', 'queued'}:
@@ -58,9 +63,12 @@ class HourlySync:
                 return False
         # Scheduled reads yield to real editing/publishing. The due time stays
         # pending, so the next tick catches up once rather than losing an hour.
-        activity = self.b.shared_automation().activity()
-        if activity['editing'] or activity['publishing'] or activity['activeTransfers']:
-            return False
+        if not self.orders_only:
+            activity = self.b.shared_automation().activity()
+            if activity['editing'] or activity['publishing'] or activity['activeTransfers']:
+                return False
+        # One order page per account is allowed while editing/publishing;
+        # the same account and global remote-request limiters still apply.
         return self.start_sync(None, launch=launch, scheduled=True)
 
     def set_enabled(self, enabled):
@@ -105,7 +113,7 @@ class HourlySync:
                         'scope': account['scope'], 'status': 'queued', 'stage': 'queued',
                         'startedAt': now, 'finishedAt': None, 'total': 0, 'processed': 0,
                         'added': 0, 'skipped': 0, 'replicas': 0, 'failed': 0, 'failures': [],
-                        'orders': None, 'orderError': '', 'error': '', 'scheduled': scheduled}
+                        'orders': None, 'orderPages': 0, 'orderReceived': 0, 'orderError': '', 'error': '', 'scheduled': scheduled}
                 if scheduled:
                     self.next_run = now + self.interval
                 try:
@@ -183,7 +191,9 @@ class HourlySync:
             return
         try:
             count = self.b.sync_miaoshou_order_pages(self._worker(account)._vendor,
-                                                     self.b.order_store(account['id']))
+                self.b.order_store(account['id']), max_records=100, merge=True,
+                progress=lambda pages, received: self._update(account, orderPages=pages, orderReceived=received))
+            self.b.DAILY_STATISTICS.invalidate(account['id'])
             self._update(account, orders=count)
         except Exception as error:
             self._update(account, orderError=self._error(account, error))
@@ -263,7 +273,10 @@ class HourlySync:
     def _run(self, accounts, scheduled):
         try:
             if self.orders_only:
-                for account in accounts:
+                def sync_account(account):
+                    if self.stop_event.is_set():
+                        self._update(account, status='interrupted', stage='interrupted', finishedAt=self.clock())
+                        return
                     try:
                         self._orders(account)
                         with self.lock:
@@ -273,12 +286,14 @@ class HourlySync:
                     except Exception as error:
                         self._update(account, status='failed', stage='finished', finishedAt=self.clock(),
                                      error=self._error(account, error))
+                if accounts:
+                    # Each account owns one page stream. Existing account locks
+                    # also prevent overlap with manual history imports.
+                    with ThreadPoolExecutor(max_workers=min(20, len(accounts)), thread_name_prefix='order-sync') as executor:
+                        list(executor.map(sync_account, accounts))
                 return
-            # Read orders for every account before potentially long detail
-            # imports, so a large collection does not delay all other orders.
-            if scheduled:
-                for account in accounts:
-                    self._orders(account)
+            # Orders have their own five-minute service. Hourly collection
+            # reads no longer perform a second, redundant order refresh.
             for account in accounts:
                 try:
                     self._collection(account)

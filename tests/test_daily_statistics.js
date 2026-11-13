@@ -5,16 +5,16 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
-function setup(clock = null, schedule = fn => { queueMicrotask(fn); }) {
+function setup(clock = null, schedule = () => {}) {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsSyncHistory','statisticsSyncOrders','statisticsSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  for (const id of ['statisticsAutoSyncStatus','statisticsSyncHistory','statisticsSyncOrders','statisticsSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
   document.addEventListener = (name, callback) => events[name] = callback;
   const ClockDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
   const intervals = new Map(); let intervalId = 0;
-  const context = {setInterval: fn => { intervals.set(++intervalId, fn); return intervalId; }, clearInterval: id => intervals.delete(id), intervals, document, window: {}, Date: ClockDate, URLSearchParams, AbortController, Blob, URL, setTimeout: schedule,
+  const context = {clearTimeout: () => {}, setInterval: fn => { intervals.set(++intervalId, fn); return intervalId; }, clearInterval: id => intervals.delete(id), intervals, document, window: {}, Date: ClockDate, URLSearchParams, AbortController, Blob, URL, setTimeout: schedule,
     openOrderAccount: id => opened.push(id), activeOrderAccountId: 2, activatePage: id => opened.push(id),
     fetch: (url, options) => new Promise(resolve => requests.push({url, options, resolve}))};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','proportion-chart.js'),'utf8'),context);
@@ -308,7 +308,7 @@ test('quick sync has no cache delay and duplicate quick/history clicks are block
   reply(s,3,result('fresh'));await pending;
   assert.match(s.el('statisticsRows').textContent,/fresh/);
   assert.equal(s.el('statisticsSyncOrders').disabled,false);assert.equal(s.el('statisticsSyncHistory').disabled,false);
-  assert.equal(s.intervals.size,0);
+  assert.equal(s.intervals.size,1);
 });
 
 test('different accounts start together, partial failure continues and each success refreshes', async () => {
@@ -385,4 +385,59 @@ test('leaving statistics skips hidden refresh; reentry reads current range', asy
   s.window.dataStatistics.setPage('dataStatistics');const refresh=s.window.dataStatistics.open();
   assert.equal(new URL(s.requests[3].url,'http://localhost').searchParams.get('start'),s.el('statisticsStart').value);
   reply(s,3,result('fresh'));await refresh;
+});
+
+const autoResult = (finishedAt=1000) => ({enabled:true,running:false,nextRunAt:1300,accounts:[
+  {accountId:1,name:'NL',status:'completed',startedAt:finishedAt-10,finishedAt,orderPages:1,orderReceived:100,orders:100}]});
+
+test('order module installs dynamic schedule labels after the legacy app loads', () => {
+  const s=setup();
+  assert.match(s.window.orderAutoSyncText({enabled:true,running:true,intervalSeconds:300}),/每 5 分钟，最近 100 条/);
+  assert.match(s.window.orderAutoSyncText({enabled:true,running:false,intervalSeconds:600,nextRunAt:1792468800}),/每 10 分钟/);
+  assert.match(s.window.orderAutoSyncText({enabled:false}),/未启用/);
+  const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+  assert.ok(html.indexOf('./data-statistics.js') < html.indexOf('./app.js'));
+});
+
+test('automatic sync completion refreshes current statistics once without POST requests', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  const initial=s.window.dataStatistics.open();reply(s,0,result('initial'));await initial;
+  const poll=[...s.intervals.values()][0];
+  let pending=poll();assert.equal(s.requests[1].url,'/api/orders/auto-sync');
+  reply(s,1,autoResult());await tick();
+  reply(s,2,result('automatic'));await pending;
+  assert.match(s.el('statisticsRows').textContent,/automatic/);
+  assert.match(s.el('statisticsAutoSyncStatus').textContent,/每 5 分钟/);
+  assert.match(s.el('statisticsAutoSyncStatus').textContent,/NL：已完成 · 1 页 \/ 100 条/);
+  pending=poll();reply(s,3,autoResult());await pending;
+  assert.equal(s.requests.length,4);
+  pending=poll();reply(s,4,autoResult(1300));await tick();
+  reply(s,5,result('next round'));await pending;
+  assert.equal(s.requests.filter(r=>r.options?.method==='POST').length,0);
+});
+
+test('automatic status respects unsubmitted date edits and ignores responses after leaving', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  const initial=s.window.dataStatistics.open();reply(s,0,result('initial'));await initial;
+  s.el('statisticsStart').value='2026-11-01';await s.el('statisticsStart').dispatch('change');
+  const poll=[...s.intervals.values()][0];
+  let pending=poll();reply(s,1,autoResult());await pending;
+  assert.equal(s.requests.length,2);assert.match(s.el('statisticsStatus').textContent,/筛选已修改/);
+  pending=poll();await tick();s.window.dataStatistics.setPage('settings');
+  assert.equal(s.requests[2].options.signal.aborted,true);assert.equal(s.intervals.size,0);
+  const previous=s.el('statisticsAutoSyncStatus').textContent;
+  reply(s,2,autoResult(2000));await pending;
+  assert.equal(s.el('statisticsAutoSyncStatus').textContent,previous);
+  await poll();assert.equal(s.requests.length,3);
+});
+
+test('automatic status polling is single-flight, avoids hidden pages, and survives failure', async () => {
+  const s=setup();s.window.dataStatistics.setPage('dataStatistics');
+  const poll=[...s.intervals.values()][0];
+  s.document.hidden=true;await poll();assert.equal(s.requests.length,0);
+  s.document.hidden=false;let pending=poll();await poll();assert.equal(s.requests.length,1);
+  reply(s,0,'busy',false);await pending;
+  assert.match(s.el('statisticsAutoSyncStatus').textContent,/稍后自动重试/);
+  pending=poll();reply(s,1,autoResult());await pending;
+  assert.match(s.el('statisticsAutoSyncStatus').textContent,/已完成/);
 });
