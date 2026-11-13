@@ -1,6 +1,7 @@
 """Execute the restart script with all process, HTTP and backup operations mocked."""
 from pathlib import Path
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -43,8 +44,8 @@ function Invoke-RestMethod {
         return @{data=@{paused=$global:paused}}
     }
     if ($Uri.EndsWith('/health')) {
-        $version=if($global:started){'1.2.205'}else{'1.2.202'}
-        return @{version=$version;runtimeVersion=$version;resourceVersion='1.2.205';pendingUpdate=(-not $global:started);
+        $version=if($global:started){'__VERSION__'}else{'1.2.202'}
+        return @{version=$version;runtimeVersion=$version;resourceVersion='__VERSION__';pendingUpdate=(-not $global:started);
                  miaoShouConfigured=$true;sharedAutomation=$true;concurrentEditing=$true;mode='live'}
     }
     if ($Uri.EndsWith('/drain-check')) {
@@ -55,7 +56,7 @@ function Invoke-RestMethod {
     }
     throw 'Unexpected HTTP request in fixture'
 }
-'''.replace('__SCENARIO__', scenario)
+'''.replace('__SCENARIO__', scenario).replace('__VERSION__', re.search(r"runtimeVersion -eq '([0-9.]+)'", source).group(1))
         with tempfile.TemporaryDirectory() as folder:
             script = Path(folder) / 'restart-fixture.ps1'
             script.write_text(source.replace('\ntry {', '\n' + mocks + '\ntry {', 1), encoding='utf-8-sig')

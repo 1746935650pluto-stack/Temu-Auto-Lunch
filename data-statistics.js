@@ -192,15 +192,44 @@
       if (request === revision && error.name !== 'AbortError') el('statisticsStatus').textContent = `统计读取失败：${error.message}`;
     }
   }
-  async function syncOrders() {
+  async function syncOrders(mode = 'recent') {
     if (syncingOrders) return;
     syncingOrders = true;
     const selected = el('statisticsAccount').value || 'all';
-    const button = el('statisticsSyncOrders'), status = el('statisticsSyncStatus');
-    button.disabled = true; button.textContent = '正在同步…';
-    status.hidden = false; status.textContent = '正在读取可同步账号…';
-    let succeeded = 0, lastSuccessAt = 0;
-    const failures = [], warnings = [];
+    const button = el('statisticsSyncOrders'), history = el('statisticsSyncHistory'), status = el('statisticsSyncStatus');
+    button.disabled = history.disabled = true;
+    const requestId = `orders_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    status.hidden = false; status.style.whiteSpace = 'pre-line';
+    status.textContent = '正在读取可同步账号…';
+    let succeeded = 0, completed = 0, skipped = 0, timer = null, pollBusy = false, ended = false;
+    const states = new Map(), controller = new AbortController();
+    const paint = () => {
+      const title = mode === 'recent' ? '快速同步最近 100 条' : '补齐历史订单';
+      status.textContent = `${title}：已完成 ${completed}/${states.size} 个账号，成功 ${succeeded}，失败 ${completed - succeeded}` +
+        (skipped ? `，跳过 ${skipped} 个未配置或不可用账号` : '') + '。\n' +
+        [...states.values()].map(row => `${row.name}：${row.label} · 已读取 ${row.pages} 页 / ${row.received} 条` +
+          (row.message ? ` · ${row.message}` : '')).join('\n');
+    };
+    const progressUrl = `/api/orders/sync-progress?requestId=${encodeURIComponent(requestId)}`;
+    const poll = async () => {
+      if (pollBusy || ended) return;
+      pollBusy = true;
+      try {
+        const response = await fetch(progressUrl, {cache: 'no-store', signal: controller.signal});
+        const result = await response.json();
+        if (!ended && response.ok && Array.isArray(result.data?.entries)) {
+          for (const entry of result.data.entries) {
+            const row = states.get(entry.accountId);
+            if (!row || row.done || entry.requestId !== requestId) continue;
+            if (Number.isSafeInteger(entry.pages) && entry.pages >= row.pages) row.pages = entry.pages;
+            if (Number.isSafeInteger(entry.received) && entry.received >= row.received) row.received = entry.received;
+            row.label = entry.status === 'completed' ? '已写入，正在确认' : '同步中';
+          }
+          paint();
+        }
+      } catch (_) { /* Progress failure must not retry a synchronization. */ }
+      finally { pollBusy = false; }
+    };
     try {
       const response = await fetch('/api/miaoshou-accounts', {cache: 'no-store'});
       const result = await response.json();
@@ -209,44 +238,47 @@
         Number.isSafeInteger(account.id) && account.id > 0 &&
         (selected === 'all' || String(account.id) === selected)).map(account => [account.id, account])).values()];
       const eligible = accounts.filter(account => account.configured && !account.blocked);
-      const skipped = accounts.length - eligible.length;
+      skipped = accounts.length - eligible.length;
       if (!eligible.length) throw Error('所选范围没有已配置且可同步的账号，请先检查接口设置。');
-      // Freeze the target accounts at click time, and read them sequentially.
-      for (let index = 0; index < eligible.length; index++) {
-        const account = eligible[index], name = account.name || `账号 ${account.id}`;
-        button.textContent = `同步中 ${index + 1}/${eligible.length}`;
-        status.textContent = `正在同步 ${name}（${index + 1}/${eligible.length}），已成功 ${succeeded} 个账号。`;
+      // Never send new modes to an older backend that would silently scan history.
+      const capability = await fetch(progressUrl, {cache: 'no-store'});
+      const capabilityResult = await capability.json();
+      if (!capability.ok || capabilityResult.data?.supportsModes !== true)
+        throw Error('后台尚未支持快速订单同步，请完成后台更新后再试。');
+      for (const account of eligible) states.set(account.id, {
+        name: account.name || `账号 ${account.id}`, pages: 0, received: 0, done: false, label: '同步中', message: ''});
+      paint();
+      timer = setInterval(poll, 1000);
+      // One serial page stream per account; accounts run concurrently using
+      // the backend's existing account locks and global request limiter.
+      await Promise.all(eligible.map(async account => {
+        const row = states.get(account.id);
         try {
           const response = await fetch('/api/orders/sync', {method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({accountId: account.id})});
+            body: JSON.stringify({accountId: account.id, mode, requestId})});
           const result = await response.json();
           if (!response.ok) throw Error(result.error || '订单同步失败');
-          if (result.data?.accountId !== account.id) throw Error('订单返回账号不匹配');
+          const data = result.data;
+          if (data?.accountId !== account.id || data.requestId !== requestId) throw Error('订单返回账号或请求编号不匹配');
+          row.pages = data.pages; row.received = data.received;
+          row.label = `完成，已保存 ${data.imported} 条`;
+          row.message = data.message || '';
           succeeded++;
-          lastSuccessAt = Date.now();
-          if (result.data.message) warnings.push(`${name}：${result.data.message}`);
-          window.orderShopCharts?.ordersSynced(account.id);
-        } catch (error) { failures.push(`${name}：${error.message || '订单同步失败'}`); }
-      }
-      status.textContent = `订单同步完成：成功 ${succeeded} 个账号，失败 ${failures.length} 个` +
-        (skipped ? `，跳过 ${skipped} 个未配置或不可用账号` : '') + '。' + [...failures, ...warnings].join('；');
+        } catch (error) { row.label = '失败'; row.message = error.message || '订单同步失败'; }
+        row.done = true; completed++; paint();
+        if (row.label !== '失败') {
+          // Refresh current filters after each committed account. open() has
+          // revision guards, so late reports never replace newer results.
+          try { window.orderShopCharts?.ordersSynced(account.id); } catch (_) {}
+          if (pageActive) await open();
+        }
+      }));
     } catch (error) { status.textContent = `订单同步未完成：${error.message || '请稍后重试'}`; }
     finally {
-      if (succeeded) {
-        // The running backend caches reports for 15 seconds and rejects
-        // unknown query parameters. Wait out that TTL instead of inventing
-        // cache-busting parameters unsupported by older backends.
-        const remaining = Math.max(0, 16000 - (Date.now() - lastSuccessAt));
-        const summary = status.textContent;
-        if (remaining) {
-          status.textContent = `${summary} 正在更新统计，最多等待 ${Math.ceil(remaining / 1000)} 秒…`;
-          await new Promise(resolve => setTimeout(resolve, remaining));
-        }
-        // Refresh the current filter, never a stale selection from click time.
-        if (pageActive) await open();
-        status.textContent = summary;
-      }
-      syncingOrders = false; button.disabled = false; button.textContent = '同步订单';
+      ended = true;
+      if (timer !== null) clearInterval(timer);
+      controller.abort();
+      syncingOrders = false; button.disabled = history.disabled = false;
     }
   }
   function setPage(page) {
@@ -283,7 +315,8 @@
     el('statisticsStart').value = el('statisticsEnd').value = beijingDate();
     dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
-    el('statisticsSyncOrders').addEventListener('click', syncOrders);
+    el('statisticsSyncOrders').addEventListener('click', () => syncOrders('recent'));
+    el('statisticsSyncHistory').addEventListener('click', () => syncOrders('history'));
     ['statisticsStart', 'statisticsEnd'].forEach(id => el(id).addEventListener('change', invalidate));
     el('statisticsAccount').addEventListener('change', open);
     [['statisticsToday', 0], ['statisticsWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {

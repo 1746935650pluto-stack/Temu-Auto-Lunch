@@ -153,6 +153,15 @@ class DailyStatistics:
         self.lock = Lock()
         self.cache = {}
 
+    def invalidate(self, account_id):
+        # Serialize with report building so an in-flight old report cannot
+        # repopulate the cache after invalidation.
+        with self.lock:
+            for key in list(self.cache):
+                selected = dict(key[3]).get('accountId', ('all',))[0]
+                if selected == 'all' or int(selected) == account_id:
+                    del self.cache[key]
+
     def report(self, accounts, pool_path, order_path, query):
         parameters(query, accounts)
         key = (str(pool_path), str(order_path), tuple((a['id'], a['name']) for a in accounts),

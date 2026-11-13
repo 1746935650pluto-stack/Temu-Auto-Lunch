@@ -74,7 +74,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.205'
+APP_VERSION = '1.2.206'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -91,6 +91,9 @@ DEEPSEEK_USAGE = DeepSeekUsage(DATA_ROOT / 'logs')
 AUTOMATION_POOL = AutomationPool(DATA_ROOT / "automation_pool.sqlite3")
 ORDER_SYNC_STORE = OrderSyncStore(DATA_ROOT / 'order_sync.sqlite3')
 ORDER_SYNC_LOCKS = {index: Lock() for index in range(1, 21)}
+# Bounded to one latest attempt per account; no order details or credentials.
+ORDER_SYNC_PROGRESS = {}
+ORDER_SYNC_PROGRESS_LOCK = Lock()
 ORDER_AUTO_SYNCS = {}
 ORDER_AUTO_SYNCS_LOCK = Lock()
 ACCOUNT_POOLS = {}
@@ -251,7 +254,7 @@ def miaoshou_package_list_payload() -> dict[str, Any]:
 
 
 def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None,
-                             *, max_records: int = ORDER_SYNC_MAX_RECORDS) -> int:
+                             *, max_records: int = ORDER_SYNC_MAX_RECORDS, merge: bool = False, progress=None) -> int:
     """Refresh recent orders; manual imports can also fill retained history."""
     if type(max_records) is not int or not 1 <= max_records <= ORDER_HISTORY_MAX_RECORDS:
         raise ValueError('订单同步数量上限不正确')
@@ -270,11 +273,15 @@ def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None,
         response = vendor(MIAOSHOU_PACKAGE_LIST_PATH, payload)
         rows = extract_package_rows(response)
         if not rows:
+            if progress:
+                progress(page - start_page + 1, len(collected))
             break
         before = len(collected)
         for row in rows:
             key = normalize_package(row)['recordKey']
             collected[key] = row
+        if progress:
+            progress(page - start_page + 1, min(len(collected), max_records))
         if len(collected) == before:
             raise ValueError('订单分页重复，已保留原订单，请稍后重试')
         if len(collected) >= max_records:
@@ -285,7 +292,9 @@ def sync_miaoshou_order_pages(vendor: Any, store: OrderSyncStore | None = None,
             break
         if len(rows) < ORDER_SYNC_PAGE_SIZE and not isinstance(total, int):
             break
-    return (store or ORDER_SYNC_STORE).replace_snapshot(list(collected.values())[:max_records])
+    target = store or ORDER_SYNC_STORE
+    write = target.upsert if merge else target.replace_snapshot
+    return write(list(collected.values())[:max_records])
 
 
 def order_account(raw_id: Any = 1) -> dict[str, Any]:
@@ -3357,6 +3366,19 @@ class AppHandler(SimpleHTTPRequestHandler):
             except (sqlite3.Error, OSError):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机统计读取未完成，请稍后刷新；未改动商品或队列')
             return
+        if route.path == '/api/orders/sync-progress':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页查询')
+                return
+            request_id = parse_qs(route.query).get('requestId', [''])[0]
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', request_id):
+                self._error(HTTPStatus.BAD_REQUEST, '订单同步请求编号不正确')
+                return
+            with ORDER_SYNC_PROGRESS_LOCK:
+                entries = [dict(row) for row in ORDER_SYNC_PROGRESS.values()
+                           if row['requestId'] == request_id]
+            self._json(HTTPStatus.OK, {'data': {'supportsModes': True, 'entries': entries}})
+            return
         if route.path == '/api/orders':
             if not self._same_origin():
                 self._error(HTTPStatus.FORBIDDEN, '只接受本地网页查询')
@@ -3769,19 +3791,45 @@ class AppHandler(SimpleHTTPRequestHandler):
             try:
                 body = self._read_body()
                 account = order_account(body.get('accountId', 1))
-                if not account['configured']:
+                mode = body.get('mode', 'history')
+                if mode not in ('recent', 'history'):
+                    raise ValueError('订单同步模式不正确')
+                request_id = body.get('requestId', uuid.uuid4().hex)
+                if not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', request_id):
+                    raise ValueError('订单同步请求编号不正确')
+                if not account['configured'] or account.get('blocked'):
                     raise ValueError('对应采集箱尚未配置独立妙手 API，不能同步订单')
                 lock = ORDER_SYNC_LOCKS[account['id']]
                 if not lock.acquire(blocking=False):
                     self._error(HTTPStatus.CONFLICT, '该账号的订单正在同步，请稍候')
                     return
                 sync_lock = lock
+                with ORDER_SYNC_PROGRESS_LOCK:
+                    ORDER_SYNC_PROGRESS[account['id']] = {
+                        'accountId': account['id'], 'requestId': request_id, 'mode': mode,
+                        'pages': 0, 'received': 0, 'imported': 0, 'status': 'running'}
+                def update_progress(pages, received):
+                    with ORDER_SYNC_PROGRESS_LOCK:
+                        ORDER_SYNC_PROGRESS[account['id']].update(pages=pages, received=received)
                 store = order_store(account['id'])
                 vendor = self._vendor if account['id'] == 1 else lambda path, payload: self._account_vendor(path, payload, account['id'])
-                imported = sync_miaoshou_order_pages(vendor, store, max_records=ORDER_HISTORY_MAX_RECORDS)
-                data = {**order_view(account, store), 'imported': imported}
-                if imported >= ORDER_HISTORY_MAX_RECORDS:
-                    data['message'] = '本轮已达到 20,000 条历史读取上限，更早订单可能仍未完整同步。'
+                limit = 100 if mode == 'recent' else ORDER_HISTORY_MAX_RECORDS
+                imported = sync_miaoshou_order_pages(vendor, store, max_records=limit,
+                                                      merge=True, progress=update_progress)
+                # Invalidate only this account and aggregate reports after commit.
+                DAILY_STATISTICS.invalidate(account['id'])
+                with ORDER_SYNC_PROGRESS_LOCK:
+                    state = ORDER_SYNC_PROGRESS[account['id']]
+                    state.update(status='completed', imported=imported)
+                    data = dict(state)
+                # Legacy order-center callers still receive the order list.
+                if 'mode' not in body:
+                    data = {**order_view(account, store), **data}
+                data['message'] = ''
+                if imported >= limit:
+                    data['message'] = ('已同步最近 100 条；更早订单未在本轮刷新，需要时请补齐历史订单。'
+                                       if mode == 'recent' else
+                                       '本轮已达到 20,000 条历史读取上限，更早订单可能仍未完整同步。')
                 self._json(HTTPStatus.OK, {'data': data})
             except ValueError as error:
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
@@ -3791,6 +3839,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机订单同步记录写入失败')
             finally:
                 if sync_lock is not None:
+                    with ORDER_SYNC_PROGRESS_LOCK:
+                        state = ORDER_SYNC_PROGRESS.get(account['id'])
+                        if state and state['requestId'] == request_id and state['status'] == 'running':
+                            state['status'] = 'failed'
                     sync_lock.release()
             return
         if route.path == '/api/automation/publish-ready':
