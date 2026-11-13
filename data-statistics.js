@@ -192,6 +192,12 @@
     }
   }
   function setPage(page) {
+    // Navigation starts with today's Beijing date. In-page queries and account
+    // changes still use the user's selected range via open().
+    if (page === 'dataStatistics') {
+      el('statisticsStart').value = el('statisticsEnd').value = beijingDate();
+      dateShortcuts();
+    }
     const active = page === 'dataStatistics' || page === 'orders';
     document.body.classList.toggle('statistics-workspace-active', active);
     const collectionContext = document.querySelector('.collection-context-bar');
@@ -215,7 +221,7 @@
     el('statisticsChartView').addEventListener('click', () => chartView('bar'));
     el('statisticsPieView').addEventListener('click', () => chartView('pie'));
     el('statisticsTableView').addEventListener('click', () => chartView('table'));
-    el('statisticsStart').value = beijingDate(-6); el('statisticsEnd').value = beijingDate();
+    el('statisticsStart').value = el('statisticsEnd').value = beijingDate();
     dateShortcuts();
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
     ['statisticsStart', 'statisticsEnd'].forEach(id => el(id).addEventListener('change', invalidate));

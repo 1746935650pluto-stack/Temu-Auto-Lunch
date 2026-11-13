@@ -5,14 +5,15 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
-function setup() {
+function setup(clock = null) {
   const document = createDocument(), events = {}, requests = [], opened = [];
   for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
   document.addEventListener = (name, callback) => events[name] = callback;
-  const context = {document, window: {}, Date, URLSearchParams, AbortController, Blob, URL, setTimeout,
+  const ClockDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
+  const context = {document, window: {}, Date: ClockDate, URLSearchParams, AbortController, Blob, URL, setTimeout,
     openOrderAccount: id => opened.push(id), activeOrderAccountId: 2, activatePage: id => opened.push(id),
     fetch: (url, options) => new Promise(resolve => requests.push({url, options, resolve}))};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','proportion-chart.js'),'utf8'),context);
@@ -22,6 +23,44 @@ function setup() {
 const result = name => ({start:'2026-11-09',end:'2026-11-09',accounts:[{id:1,name}],rows:[{
   date:'2026-11-09',accountId:1,accountName:name,collected:3,tasks:2,saved:1,submitted:1,editFailed:0,publishFailed:0,needsInput:0,orders:4,packages:5,quantity:6,amounts:{USD:'12.30'},amountMissing:2}],
   totals:{collected:3,saved:1,submitted:1,editFailed:0,publishFailed:0,orders:4,amounts:{USD:'12.30'},amountMissing:2},warnings:[]});
+
+test('initial navigation requests only today in Beijing even on a different UTC day', async () => {
+  const s = setup({now: Date.parse('2026-11-12T16:15:00Z')});
+  assert.equal(s.el('statisticsStart').value, '2026-11-13');
+  assert.equal(s.el('statisticsEnd').value, '2026-11-13');
+  assert.equal(s.el('statisticsToday').attrs['aria-pressed'], 'true');
+  assert.equal(s.el('statisticsWeek').attrs['aria-pressed'], 'false');
+  s.window.dataStatistics.setPage('dataStatistics');
+  const pending = s.window.dataStatistics.open();
+  const params = new URL(s.requests[0].url, 'http://localhost').searchParams;
+  assert.equal(params.get('start'), '2026-11-13');
+  assert.equal(params.get('end'), '2026-11-13');
+  s.requests[0].resolve({ok:true,json:async()=>({data:result('today')})}); await pending;
+});
+
+test('week shortcut stays usable and reentering after midnight resets to the new day', async () => {
+  const clock = {now: Date.parse('2026-11-12T16:15:00Z')}, s = setup(clock);
+  s.window.dataStatistics.setPage('dataStatistics');
+  await s.el('statisticsWeek').dispatch('click');
+  let params = new URL(s.requests[0].url, 'http://localhost').searchParams;
+  assert.equal(params.get('start'), '2026-11-07');
+  assert.equal(params.get('end'), '2026-11-13');
+  assert.equal(s.el('statisticsWeek').attrs['aria-pressed'], 'true');
+  s.window.dataStatistics.setPage('settings');
+  clock.now = Date.parse('2026-11-13T16:01:00Z');
+  s.window.dataStatistics.setPage('dataStatistics');
+  const pending = s.window.dataStatistics.open();
+  params = new URL(s.requests[1].url, 'http://localhost').searchParams;
+  assert.equal(params.get('start'), '2026-11-14');
+  assert.equal(params.get('end'), '2026-11-14');
+  assert.equal(s.requests[0].options.signal.aborted, true);
+  assert.equal(s.el('statisticsToday').attrs['aria-pressed'], 'true');
+  s.requests[1].resolve({ok:true,json:async()=>({data:result('new day')})}); await pending;
+  s.requests[0].resolve({ok:true,json:async()=>({data:result('old week')})});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(s.el('statisticsRows').textContent, /new day/);
+  assert.doesNotMatch(s.el('statisticsRows').textContent, /old week/);
+});
 test('late responses cannot overwrite newer account filters', async () => {
   const s = setup(); const first = s.window.dataStatistics.open(); const second = s.window.dataStatistics.open();
   s.requests[1].resolve({ok:true,json:async()=>({data:result('new')})}); await second;
