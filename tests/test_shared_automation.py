@@ -855,7 +855,7 @@ class SharedAutomationTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT status FROM automation_jobs WHERE job_id=?',(job_id,)).fetchone()[0],'canceled')
             self.assertEqual(db.execute("SELECT count(*) FROM automation_job_events WHERE job_id=? AND step='canceled'",(job_id,)).fetchone()[0],1)
 
-    def test_batch_delete_skips_running_and_ready_publish_but_cancels_queued(self):
+    def test_batch_delete_skips_running_but_cancels_ready_and_queued(self):
         pool = server.automation_pool(1)
         jobs = pool.queue_jobs([123],[7,8,9,10],'US')
         for job,status in zip(jobs,['queued','needs_input','running','ready_publish']):
@@ -865,11 +865,36 @@ class SharedAutomationTests(unittest.TestCase):
                 pool.update_job(job['jobId'],'prepare',status,'fixture')
         refs = [{'accountId':1,'jobId':j['jobId']} for j in jobs]
         result = self.service.delete_records({'jobs':refs,'confirmation':'DELETE_SHARED_JOB_RECORDS'})
-        self.assertEqual(result['deleted'],refs[:2])
-        self.assertEqual([r['jobId'] for r in result['errors']],[j['jobId'] for j in jobs[2:]])
+        self.assertEqual(result['deleted'],refs[:2]+refs[3:])
+        self.assertEqual([r['jobId'] for r in result['errors']],[jobs[2]['jobId']])
         self.assertEqual(pool.get_job(jobs[2]['jobId'])['status'],'running')
-        self.assertEqual(pool.get_job(jobs[3]['jobId'])['status'],'ready_publish')
+        self.assertIsNone(pool.get_job(jobs[3]['jobId']))
         self.assertFalse(pool.has_queued_jobs())
+
+    def test_delete_ready_job_atomically_removes_pending_publish_and_rejects_started_job(self):
+        pool = server.automation_pool(1)
+        jobs = pool.queue_jobs([123], [7, 8], 'US')
+        for job in jobs:
+            pool.update_job(job['jobId'], 'save', 'ready_publish', 'saved')
+        batch = pool.begin_publish_batch([job['jobId'] for job in jobs], 1)
+        started = pool.start_next_ready_publish_job(batch)
+        waiting = next(job for job in jobs if job['jobId'] != started['jobId'])
+        refs = [{'accountId':1,'jobId':job['jobId']} for job in (started, waiting)]
+        self.calls.clear()
+        result = self.service.delete_records({'jobs':refs,'confirmation':'DELETE_SHARED_JOB_RECORDS'})
+        self.assertEqual(result['deleted'], [refs[1]])
+        self.assertEqual(result['errors'][0]['jobId'], started['jobId'])
+        self.assertEqual(pool.get_job(started['jobId'])['status'], 'running')
+        self.assertIsNone(pool.get_job(waiting['jobId']))
+        self.assertIsNotNone(pool.get_item(123))
+        self.assertEqual(self.calls, [])
+        self.assertIsNone(pool.start_next_ready_publish_job(batch))
+        with closing(pool._job_pool(waiting['jobId'])._connect()) as db:
+            self.assertEqual(db.execute('SELECT status FROM automation_publish_batch_items WHERE job_id=?',
+                (waiting['jobId'],)).fetchone()[0], 'removed')
+            self.assertEqual(db.execute('SELECT status FROM automation_jobs WHERE job_id=?',
+                (waiting['jobId'],)).fetchone()[0], 'canceled')
+        self.assertEqual(self.service.delete_records({'jobs':[refs[1]],'confirmation':'DELETE_SHARED_JOB_RECORDS'})['deleted'], [refs[1]])
 
     def test_batch_delete_can_clear_review_transfer_without_erasing_copy_evidence(self):
         _, transfers = self.prepare(targets=((2, 7),))

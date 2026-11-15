@@ -384,12 +384,12 @@
       known.textContent = state.handlingFailures ? '正在分类处理…' : `批量处理本页可恢复问题 (${count})`;
       known.disabled = !writable || !count || !!state.handlingFailures || !!state.retrying || !!state.deleting;
     }
-    remove.hidden = group === 'publish';
+    remove.hidden = false;
     remove.disabled = !!state.deleting || !!state.retrying || !!state.handlingFailures || !selected.some(canDeleteRecord);
     $('sharedSelectionHint').textContent = !writable && group === 'publish' ? '当前只读模式：可以预览数量，不能真实发布。按数量取当前筛选的前 N 件（跨页总量），不受勾选影响。' :
       group === 'attention' ? `${state.config?.paused ? '自动处理已暂停；恢复后继续排队任务。' : !writable ? '当前只读模式，不能重试保存。' : ''}待处理任务请逐条查看原因；失败／中断可批量重试。删除仅移除本地记录。` :
       group === 'processing' ? '运行中的任务不能删除；删除排队任务会同时结束排队。' :
-      group === 'publish' ? '按数量取当前筛选的前 N 件（跨页总量），不受勾选影响；也可单独发布勾选商品。两种方式均须确认后发布。' : '删除记录不会删除妙手商品。';
+      group === 'publish' ? '按数量取当前筛选的前 N 件（跨页总量），不受勾选影响；也可发布或删除勾选商品。删除只移除本地任务，不删除妙手商品。' : '删除记录不会删除妙手商品。';
   }
   function updateTaskCounts(data) {
     if (!Object.keys(taskGroups).every(key=>Number.isSafeInteger(data.counts?.[key]) && data.counts[key]>=0
@@ -1012,7 +1012,7 @@
     notice(`分类处理完成：已接受 ${processed} 条，失败 ${failed} 条，跳过 ${skipped} 条。已接受不等于远端保存成功；不会自动发布。${errors.length?' '+errors.join('；'):''}`);
   }
   function canDeleteJob(row) {
-    return ['queued','needs_input','done','failed','needs_review','interrupted','canceled'].includes(row.status);
+    return ['queued','needs_input','ready_publish','done','failed','needs_review','interrupted','canceled'].includes(row.status);
   }
   function canDeleteRecord(row) {
     // A transfer may be removed only after it has stopped and requires review.
@@ -1036,7 +1036,7 @@
     if (selected.length > 500) throw Error('每次最多删除 500 条任务记录');
     const dialog = modal('删除本地任务记录');
     dialog.content.append(element('p',`将删除 ${selected.length} 条本地记录。排队中和待处理的任务会一并结束。`),
-      element('p','不删除妙手商品、自动化池商品或副本映射。跨账号副本仅能清除“需人工核查”的本地记录；正在运行的任务会跳过，待发布任务需先移出发布队列。'));
+      element('p','不删除妙手商品、自动化池商品或副本映射。待发布任务会同时移出发布队列；正在运行或发布的任务会跳过。跨账号副本仅能清除“需人工核查”的本地记录。'));
     const confirm = deleteButton(`确认删除 ${selected.length} 条记录`,()=>performDeleteRecords(selected,dialog));
     confirm.id = 'sharedConfirmDelete';
     dialog.content.append(button('取消，保留记录',()=>{dialog.overlay.remove();if(state.modal===dialog)state.modal=null;}),confirm);

@@ -352,7 +352,7 @@ test('duplicate deletion clicks cannot send a second request; only explicit stat
   assert.equal(state.jobs.selected.size,0);
   for(const status of ['needs_input','queued','done','failed','needs_review','interrupted','canceled'])
     assert.equal(ctx.canDeleteJob({status}),true);
-  for(const status of ['running','ready_publish','unknown'])assert.equal(ctx.canDeleteJob({status}),false);
+  for(const status of ['running','unknown'])assert.equal(ctx.canDeleteJob({status}),false);
 });
 
 test('stale confirmation dialog cannot issue deletion after cancellation', async () => {
@@ -367,7 +367,7 @@ test('task toolbar shows publication only in publish group and gates actions by 
   const nodes = Object.fromEntries(['sharedJobActions','sharedPublishSelected','sharedRetrySelected','sharedDeleteSelected','sharedPublishSettings','sharedSelectionHint','sharedPublishCountField','sharedPublishCountPreview','sharedPublishCount'].map(id=>[id,{}]));
   nodes.sharedPublishCount.value='209';
   const state = {config:{mode:'live'},jobs:{group:'attention',selected:new Map()}};
-  const canDeleteJob=r=>!['running','ready_publish'].includes(r.status);
+  const canDeleteJob=r=>r.status!=='running';
   const ctx = vm.createContext({state,$:id=>nodes[id],canDeleteJob,canDeleteRecord:r=>r.type === 'transfer'
     ? ['needs_review','discarded'].includes(r.status) : canDeleteJob(r)});
   vm.runInContext(functions('  function updateTaskControls','  function updateTaskSummary'),ctx);
@@ -377,7 +377,7 @@ test('task toolbar shows publication only in publish group and gates actions by 
   state.jobs.selected.set('1:a',{status:'failed',available:true});ctx.updateTaskControls();assert.equal(nodes.sharedRetrySelected.disabled,false);
   state.jobs.group='publish';state.jobs.selected.set('1:a',{status:'ready_publish',available:true});ctx.updateTaskControls();
   assert.equal(nodes.sharedPublishSelected.hidden,false);assert.equal(nodes.sharedPublishSelected.disabled,false);
-  assert.equal(nodes.sharedRetrySelected.hidden,true);assert.equal(nodes.sharedDeleteSelected.hidden,true);
+  assert.equal(nodes.sharedRetrySelected.hidden,true);assert.equal(nodes.sharedDeleteSelected.hidden,false);assert.equal(nodes.sharedDeleteSelected.disabled,false);
   state.config.mode='demo';ctx.updateTaskControls();assert.equal(nodes.sharedPublishSelected.disabled,true);
   assert.equal(nodes.sharedPublishCountPreview.disabled,false);assert.equal(nodes.sharedPublishCountField.hidden,false);
   nodes.sharedPublishCount.value='1.5';ctx.updateTaskControls();assert.equal(nodes.sharedPublishCountPreview.disabled,true);

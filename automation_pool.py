@@ -1435,11 +1435,21 @@ class AutomationPool:
             if any(job_id not in found for job_id in ids) or (not allow_pending and any(row['deleted'] for row in rows)):
                 raise ValueError('部分任务不存在或已删除')
             if allow_pending:
-                terminal |= {'needs_input', 'queued'}
+                terminal |= {'needs_input', 'queued', 'ready_publish'}
             if any(found[job_id] not in terminal for job_id in ids):
                 if allow_pending:
-                    raise ValueError('运行中的任务不能删除；待发布任务请先移出发布队列')
+                    raise ValueError('运行中或正在发布的任务不能删除')
                 raise ValueError('运行中、待处理或待发布的任务不能删除')
+            ready_ids = [row['job_id'] for row in rows if not row['deleted'] and row['status'] == 'ready_publish']
+            if ready_ids:
+                message = '用户删除本地待发布任务；已移出发布队列，妙手商品保留'
+                connection.executemany("""UPDATE automation_jobs SET status='canceled', step='publish',
+                    message=?, updated_at=? WHERE job_id=? AND status='ready_publish'""",
+                    [(message, now, job_id) for job_id in ready_ids])
+                connection.executemany("""INSERT INTO automation_job_events (job_id, step, status, message, created_at)
+                    VALUES (?, 'publish', 'canceled', ?, ?)""", [(job_id, message, now) for job_id in ready_ids])
+                connection.executemany("""UPDATE automation_publish_batch_items SET status='removed'
+                    WHERE job_id=? AND status='pending'""", [(job_id,) for job_id in ready_ids])
             pending_ids = [row['job_id'] for row in rows if not row['deleted'] and row['status'] in {'needs_input', 'queued'}]
             if pending_ids:
                 message = '用户删除本地任务记录，已结束排队或待处理任务；未删除妙手商品'
