@@ -13,6 +13,7 @@
   function shortcuts() {
     const start = el('orderShopStart').value, end = el('orderShopEnd').value;
     el('orderShopToday').setAttribute('aria-pressed', String(start === day(0) && end === day(0)));
+    el('orderShopYesterday').setAttribute('aria-pressed', String(start === day(-1) && end === day(-1)));
     el('orderShopWeek').setAttribute('aria-pressed', String(start === day(-6) && end === day(0)));
   }
   function chartView(mode) {
@@ -124,8 +125,8 @@
     el('orderShopPieView').addEventListener('click',()=>chartView('pie'));
     el('orderShopForm').addEventListener('submit', event => { event.preventDefault(); load(); });
     ['orderShopStart', 'orderShopEnd'].forEach(id => el(id).addEventListener('change', () => { revision += 1; controller?.abort(); clear('日期已修改，请查询店铺数据。'); shortcuts(); }));
-    [['orderShopToday', 0], ['orderShopWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {
-      el('orderShopStart').value = day(offset); el('orderShopEnd').value = day(0); load();
+    [['orderShopToday', 0, 0], ['orderShopYesterday', -1, -1], ['orderShopWeek', -6, 0]].forEach(([id, startOffset, endOffset]) => el(id).addEventListener('click', () => {
+      el('orderShopStart').value = day(startOffset); el('orderShopEnd').value = day(endOffset); load();
     }));
   });
   window.orderShopCharts = {open, close, configure: options => { callbacks = options; },

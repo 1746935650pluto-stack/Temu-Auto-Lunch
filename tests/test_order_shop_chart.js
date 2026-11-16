@@ -1,11 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {createDocument}=require('./dom_fixture');
 const source=fs.readFileSync(path.join(__dirname,'..','order-shop-chart.js'),'utf8');
-function setup(){
+function setup(now=null){
   const document=createDocument(),events={},requests=[],selected=[],loaded=[];
-  for(const id of ['orderShopPlot','orderShopSummary','orderShopStatus','orderShopHint','orderShopStart','orderShopEnd','orderShopToday','orderShopWeek','orderShopTitle','orderShopCaption','orderShopMetric','orderShopForm','orderShopBarView','orderShopPieView'])document.createNode(id);
+  for(const id of ['orderShopPlot','orderShopSummary','orderShopStatus','orderShopHint','orderShopStart','orderShopEnd','orderShopToday','orderShopYesterday','orderShopWeek','orderShopTitle','orderShopCaption','orderShopMetric','orderShopForm','orderShopBarView','orderShopPieView'])document.createNode(id);
   document.createElementNS=(ns,tag)=>document.createElement(tag);document.addEventListener=(name,fn)=>events[name]=fn;
-  const context={document,window:{},URLSearchParams,AbortController,Date,fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve}))};
+  const ClockDate=now===null?Date:class extends Date {static now(){return now;}};
+  const context={document,window:{},URLSearchParams,AbortController,Date:ClockDate,fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve}))};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','proportion-chart.js'),'utf8'),context);
   vm.runInNewContext(source,context);events.DOMContentLoaded();
   context.window.orderShopCharts.configure({onSelect:shop=>selected.push(shop),onLoaded:id=>loaded.push(id)});
@@ -16,6 +17,37 @@ const report=(accountId,name)=>({accountId,accountName:`account-${accountId}`,st
     {accountId,shopId:'2',shopKey:'2',shopName:'Beta',displayName:'Beta',orders:1,packages:1,quantity:9,quantityMissing:0}],
   totals:{orders:4,packages:5,quantity:11,quantityMissing:0}});
 function respond(request,data){request.resolve({ok:true,json:async()=>({data})});}
+
+test('yesterday queries only the preceding Beijing day and updates shortcut states',async()=>{
+  const s=setup(Date.parse('2026-11-15T16:05:00Z'));
+  const pending=s.chart.open(5);respond(s.requests[0],report(5,'initial'));await pending;
+  assert.equal(s.el('orderShopToday').attrs['aria-pressed'],'true');
+  await s.el('orderShopYesterday').dispatch('click');
+  const params=new URL(s.requests[1].url,'http://localhost').searchParams;
+  assert.equal(params.get('accountId'),'5');assert.equal(params.get('start'),'2026-11-15');assert.equal(params.get('end'),'2026-11-15');
+  assert.equal(s.el('orderShopYesterday').attrs['aria-pressed'],'true');
+  assert.equal(s.el('orderShopToday').attrs['aria-pressed'],'false');assert.equal(s.el('orderShopWeek').attrs['aria-pressed'],'false');
+  respond(s.requests[1],report(5,'yesterday'));
+  await new Promise(resolve=>setImmediate(resolve));
+  await s.el('orderShopWeek').dispatch('click');
+  const week=new URL(s.requests[2].url,'http://localhost').searchParams;
+  assert.equal(week.get('start'),'2026-11-10');assert.equal(week.get('end'),'2026-11-16');
+  assert.equal(s.el('orderShopYesterday').attrs['aria-pressed'],'false');assert.equal(s.el('orderShopWeek').attrs['aria-pressed'],'true');
+  respond(s.requests[2],report(5,'week'));await new Promise(resolve=>setImmediate(resolve));
+  s.el('orderShopStart').value='2026-11-14';await s.el('orderShopStart').dispatch('change');
+  assert.equal(s.el('orderShopYesterday').attrs['aria-pressed'],'false');
+});
+
+test('yesterday ignores late earlier responses and computes year boundary',async()=>{
+  const s=setup(Date.parse('2025-12-31T16:01:00Z'));
+  const pending=s.chart.open(1);await s.el('orderShopYesterday').dispatch('click');
+  const q=new URL(s.requests[1].url,'http://localhost').searchParams;
+  assert.equal(q.get('start'),'2025-12-31');assert.equal(q.get('end'),'2025-12-31');
+  assert.equal(s.requests[0].options.signal.aborted,true);
+  respond(s.requests[1],report(1,'new'));await new Promise(resolve=>setImmediate(resolve));
+  respond(s.requests[0],report(1,'old'));await pending;
+  assert.match(s.el('orderShopPlot').textContent,/new/);assert.doesNotMatch(s.el('orderShopPlot').textContent,/old/);
+});
 
 test('shop pie displays current account proportions and legend/keyboard keeps exact store identity',async()=>{
   const s=setup(),pending=s.chart.open(5);respond(s.requests[0],report(5,'Alpha'));await pending;

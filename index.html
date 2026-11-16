@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.210" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.211" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.210">当前版本 V1.2.210</span>
+          <span class="app-version" data-resource-version="1.2.211">当前版本 V1.2.211</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -491,7 +491,7 @@
               <div class="statistics-chart-tools"><div class="statistics-chart-heading"><h2 id="orderShopTitle">订单数 · 店铺对比</h2><p id="orderShopCaption">当前账号的店铺数据</p></div><div class="statistics-chart-controls"><label class="order-shop-metric">统计指标<select id="orderShopMetric"><option value="orders">订单数</option><option value="packages">包裹数</option><option value="quantity">已知件数</option></select></label><div class="statistics-view-switch" role="group" aria-label="店铺图表展示方式"><button type="button" class="button primary" id="orderShopBarView" aria-pressed="true" aria-controls="orderShopPlot">柱状图</button><button type="button" class="button subtle" id="orderShopPieView" aria-pressed="false" aria-controls="orderShopPlot">饼状图</button></div></div></div>
               <form class="order-shop-filters" id="orderShopForm">
                 <label>开始日期<input type="date" id="orderShopStart" required /></label><span class="order-shop-separator" aria-hidden="true">—</span><label>结束日期<input type="date" id="orderShopEnd" required /></label>
-                <button class="button subtle" type="button" id="orderShopToday">今天</button><button class="button subtle" type="button" id="orderShopWeek">近 7 天</button><button class="button primary" type="submit">查询店铺</button>
+                <button class="button subtle" type="button" id="orderShopToday">今天</button><button class="button subtle" type="button" id="orderShopYesterday">昨天</button><button class="button subtle" type="button" id="orderShopWeek">近 7 天</button><button class="button primary" type="submit">查询店铺</button>
                 <div class="order-shop-summary" id="orderShopSummary"></div>
               </form>
               <p id="orderShopStatus" class="order-shop-status" role="status" aria-live="polite">选择日期后查看各店铺数据。</p>
@@ -775,24 +775,24 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./proportion-chart.js?v=1.2.210&build=2"></script>
-    <script src="./data-statistics.js?v=1.2.210"></script>
-    <script src="./order-shop-chart.js?v=1.2.210"></script>
-    <script src="./navigation-state.js?v=1.2.210"></script>
-    <script src="./account-context.js?v=1.2.210"></script>
-  <script src="./local-view-cache.js?v=1.2.210"></script>
-  <script src="./live-status.js?v=1.2.210"></script>
+    <script src="./proportion-chart.js?v=1.2.211&build=2"></script>
+    <script src="./data-statistics.js?v=1.2.211"></script>
+    <script src="./order-shop-chart.js?v=1.2.211"></script>
+    <script src="./navigation-state.js?v=1.2.211"></script>
+    <script src="./account-context.js?v=1.2.211"></script>
+  <script src="./local-view-cache.js?v=1.2.211"></script>
+  <script src="./live-status.js?v=1.2.211"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.210"></script>
-  <script src="./shared-automation.js?v=1.2.210"></script>
-  <script src="./pricing-workbench.js?v=1.2.210"></script>
-  <script src="./shipping-bindings.js?v=1.2.210"></script>
-  <script src="./app.js?v=1.2.210"></script>
+  <script src="./diagnostics-panel.js?v=1.2.211"></script>
+  <script src="./shared-automation.js?v=1.2.211"></script>
+  <script src="./pricing-workbench.js?v=1.2.211"></script>
+  <script src="./shipping-bindings.js?v=1.2.211"></script>
+  <script src="./app.js?v=1.2.211"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
-    <script src="./automatic-tasks.js?v=1.2.210"></script>
-    <script src="./desktop-ui.js?v=1.2.210"></script>
-    <script src="./size-reference.js?v=1.2.210"></script>
-    <script src="./live-editor.js?v=1.2.210"></script>
+    <script src="./automatic-tasks.js?v=1.2.211"></script>
+    <script src="./desktop-ui.js?v=1.2.211"></script>
+    <script src="./size-reference.js?v=1.2.211"></script>
+    <script src="./live-editor.js?v=1.2.211"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>
