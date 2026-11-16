@@ -7,7 +7,7 @@ const {createDocument} = require('./dom_fixture');
 const source = fs.readFileSync(path.join(__dirname, '..', 'data-statistics.js'), 'utf8');
 function setup(clock = null, schedule = () => {}) {
   const document = createDocument(), events = {}, requests = [], opened = [];
-  for (const id of ['statisticsAutoSyncStatus','statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
+  for (const id of ['statisticsAccount','statisticsStart','statisticsEnd','statisticsExport','statisticsRows','statisticsCards','statisticsStatus','statisticsTabs','statisticsDailyTab','statisticsOrdersTab','statisticsFilters','statisticsToday','statisticsYesterday','statisticsWeek','statisticsMetric','statisticsTable','statisticsChartPanel','statisticsChartView','statisticsPieView','statisticsTableView','statisticsChartTitle','statisticsChartLegend','statisticsChartPlot','statisticsChartHint','statisticsChartCaption']) document.createNode(id);
   document.body = document.createElement('body');
   document.createNode('collectionContext').className = 'collection-context-bar';
   document.createElementNS = (ns, tag) => document.createElement(tag);
@@ -301,8 +301,6 @@ test('automatic sync completion refreshes current statistics once without POST r
   reply(s,1,autoResult());await tick();
   reply(s,2,result('automatic'));await pending;
   assert.match(s.el('statisticsRows').textContent,/automatic/);
-  assert.match(s.el('statisticsAutoSyncStatus').textContent,/每 5 分钟/);
-  assert.match(s.el('statisticsAutoSyncStatus').textContent,/NL：已完成 · 1 页 \/ 100 条/);
   pending=poll();reply(s,3,autoResult());await pending;
   assert.equal(s.requests.length,4);
   pending=poll();reply(s,4,autoResult(1300));await tick();
@@ -319,9 +317,7 @@ test('automatic status respects unsubmitted date edits and ignores responses aft
   assert.equal(s.requests.length,2);assert.match(s.el('statisticsStatus').textContent,/筛选已修改/);
   pending=poll();await tick();s.window.dataStatistics.setPage('settings');
   assert.equal(s.requests[2].options.signal.aborted,true);assert.equal(s.intervals.size,0);
-  const previous=s.el('statisticsAutoSyncStatus').textContent;
   reply(s,2,autoResult(2000));await pending;
-  assert.equal(s.el('statisticsAutoSyncStatus').textContent,previous);
   await poll();assert.equal(s.requests.length,3);
 });
 
@@ -331,7 +327,33 @@ test('automatic status polling is single-flight, avoids hidden pages, and surviv
   s.document.hidden=true;await poll();assert.equal(s.requests.length,0);
   s.document.hidden=false;let pending=poll();await poll();assert.equal(s.requests.length,1);
   reply(s,0,'busy',false);await pending;
-  assert.match(s.el('statisticsAutoSyncStatus').textContent,/稍后自动重试/);
   pending=poll();reply(s,1,autoResult());await pending;
-  assert.match(s.el('statisticsAutoSyncStatus').textContent,/已完成/);
+});
+
+test('yesterday filters the preceding Beijing day and preserves account selection',async()=>{
+  const s=setup({now:Date.parse('2026-11-15T16:05:00Z')});
+  s.window.dataStatistics.setPage('dataStatistics');s.el('statisticsAccount').value='2';
+  const initial=s.window.dataStatistics.open();reply(s,0,accountResult(2,'initial',4));await initial;
+  await s.el('statisticsYesterday').dispatch('click');
+  const q=new URL(s.requests[1].url,'http://localhost').searchParams;
+  assert.equal(q.get('start'),'2026-11-15');assert.equal(q.get('end'),'2026-11-15');assert.equal(q.get('accountId'),'2');
+  assert.equal(s.el('statisticsYesterday').attrs['aria-pressed'],'true');
+  assert.equal(s.el('statisticsToday').attrs['aria-pressed'],'false');assert.equal(s.el('statisticsWeek').attrs['aria-pressed'],'false');
+  reply(s,1,accountResult(2,'yesterday',8));await tick();
+  await s.el('statisticsWeek').dispatch('click');
+  const week=new URL(s.requests[2].url,'http://localhost').searchParams;
+  assert.equal(week.get('start'),'2026-11-10');assert.equal(week.get('end'),'2026-11-16');
+  assert.equal(s.el('statisticsYesterday').attrs['aria-pressed'],'false');assert.equal(s.el('statisticsWeek').attrs['aria-pressed'],'true');
+  reply(s,2,accountResult(2,'week',3));await tick();
+  assert.equal(s.document.getElementById('statisticsAutoSyncStatus'),null);
+});
+
+test('yesterday handles Beijing year boundary and ignores earlier stale response',async()=>{
+  const s=setup({now:Date.parse('2025-12-31T16:01:00Z')});s.window.dataStatistics.setPage('dataStatistics');
+  const first=s.window.dataStatistics.open();await s.el('statisticsYesterday').dispatch('click');
+  const q=new URL(s.requests[1].url,'http://localhost').searchParams;
+  assert.equal(q.get('start'),'2025-12-31');assert.equal(q.get('end'),'2025-12-31');
+  assert.equal(s.requests[0].options.signal.aborted,true);
+  reply(s,1,result('fresh'));await tick();reply(s,0,result('stale'));await first;
+  assert.match(s.el('statisticsRows').textContent,/fresh/);assert.doesNotMatch(s.el('statisticsRows').textContent,/stale/);
 });

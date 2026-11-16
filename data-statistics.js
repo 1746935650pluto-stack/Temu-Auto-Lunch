@@ -137,6 +137,7 @@
   function dateShortcuts() {
     const today = beijingDate(), start = el('statisticsStart').value, end = el('statisticsEnd').value;
     el('statisticsToday').setAttribute('aria-pressed', String(start === today && end === today));
+    el('statisticsYesterday').setAttribute('aria-pressed', String(start === beijingDate(-1) && end === beijingDate(-1)));
     el('statisticsWeek').setAttribute('aria-pressed', String(start === beijingDate(-6) && end === today));
   }
   function accountsChanged(accounts) {
@@ -222,14 +223,6 @@
         const token = `${row.startedAt}:${row.finishedAt}`;
         if (autoCompletions.get(row.accountId) !== token) changed = true;
       }
-      const time = data.nextRunAt ? new Date(data.nextRunAt * 1000).toLocaleTimeString('zh-CN',
-        {timeZone: 'Asia/Shanghai', hour12: false}) : '—';
-      const status = el('statisticsAutoSyncStatus'); status.style.whiteSpace = 'pre-line';
-      status.textContent = data.enabled ? `订单自动同步：每 5 分钟，各账号最近 100 条 · ${data.running ? '同步中' : `下次 ${time}（北京时间）`}` : '订单自动同步：未启用';
-      status.textContent += rows.length ? '\n' + rows.map(row => {
-        const label = {completed: '已完成', running: '同步中', queued: '等待中', partial: '本轮未完成', failed: '失败', interrupted: '已中断'}[row.status] || '等待首次同步';
-        return `${row.name}：${label} · ${row.orderPages || 0} 页 / ${row.orderReceived || 0} 条` + (row.orderError ? ` · ${row.orderError}` : '');
-      }).join('\n') : '';
       // Respect unsent date edits, current reads, and late filter changes.
       if (changed && current && revision === filterRevision) {
         await open();
@@ -238,9 +231,8 @@
             autoCompletions.set(row.accountId, `${row.startedAt}:${row.finishedAt}`);
         }
       }
-    } catch (error) {
-      if (pageActive && request === autoRevision && error.name !== 'AbortError')
-        el('statisticsAutoSyncStatus').textContent = '自动订单同步状态暂不可用，稍后自动重试；后台定时任务不受影响。';
+    } catch (_) {
+      // Retry the next status poll; background synchronization is independent.
     } finally {
       clearTimeout(timeout);
       if (autoPollController === controller) autoPollController = null;
@@ -290,8 +282,8 @@
     el('statisticsFilters').addEventListener('submit', event => { event.preventDefault(); open(); });
     ['statisticsStart', 'statisticsEnd'].forEach(id => el(id).addEventListener('change', invalidate));
     el('statisticsAccount').addEventListener('change', open);
-    [['statisticsToday', 0], ['statisticsWeek', -6]].forEach(([id, offset]) => el(id).addEventListener('click', () => {
-      el('statisticsStart').value = beijingDate(offset); el('statisticsEnd').value = beijingDate(); open();
+    [['statisticsToday', 0, 0], ['statisticsYesterday', -1, -1], ['statisticsWeek', -6, 0]].forEach(([id, startOffset, endOffset]) => el(id).addEventListener('click', () => {
+      el('statisticsStart').value = beijingDate(startOffset); el('statisticsEnd').value = beijingDate(endOffset); open();
     }));
     el('statisticsDailyTab').addEventListener('click', () => activatePage('dataStatistics'));
     el('statisticsOrdersTab').addEventListener('click', () => openOrderAccount(activeOrderAccountId));
