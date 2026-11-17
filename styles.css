@@ -1068,3 +1068,8 @@ button.proportion-row:hover, .proportion-row.is-selected { border-color: #b5cefa
 .shared-target-footer { color: #8291a8; font-size: 12px; }
 .shared-target-navigation { display: flex; gap: 6px; }
 @media (max-width: 600px) { .shared-target-heading small { display: block; margin: 4px 0 0; } .shared-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .shared-target-tools input { min-width: 0; } }
+
+/* Highlight the multi-shop publication entry while retaining a distinct primary preview action. */
+#sharedPublishMulti.button.subtle { background: #e8f0ff; border-color: #b9cef9; color: #1756bb; }
+#sharedPublishMulti.button.subtle:hover:not(:disabled) { background: #d8e6ff; border-color: #89adf5; color: #124aa2; }
+#sharedPublishMulti.button.subtle:focus-visible { outline: 3px solid #94b8ff; outline-offset: 2px; }
