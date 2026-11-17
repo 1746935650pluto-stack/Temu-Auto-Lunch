@@ -42,3 +42,17 @@ test('clearing the selected account clears dependent choices without an invalid 
   const s=await ready(), before=s.requests.length;s.node('shippingAccount').value='';await s.node('shippingAccount').dispatch('change');
   assert.equal(s.requests.length,before);assert.equal(s.node('saveShippingBinding').disabled,true);assert.match(s.node('shippingBindingStatus').textContent,/请选择要绑定的账号/);
 });
+test('empty site freight and warehouse results are explicit and cannot be saved',async()=>{
+  const s=await ready();
+  for(const [freight,warehouses,expected] of [
+    [[],[{id:'w',name:'Warehouse'}],/妙手接口未返回当前店铺和站点的运费模板/],
+    [[{id:'f',name:'Freight'}],[],/妙手接口未返回当前店铺和站点的发货仓库/],
+    [[],[],/运费模板及发货仓库/]]) {
+    const pending=s.node('refreshShippingBinding').dispatch('click');
+    const index=s.requests.length-1;assert.match(s.requests[index].url,/refresh=1/);
+    s.reply(index,{...selected(2),freight,warehouses});await pending;
+    assert.match(s.node('shippingBindingStatus').textContent,expected);
+    assert.match(s.node('shippingBindingStatus').textContent,/重新读取/);
+    assert.equal(s.node('saveShippingBinding').disabled,true);
+  }
+});

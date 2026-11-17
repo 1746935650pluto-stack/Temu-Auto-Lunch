@@ -61,7 +61,9 @@
           options('shippingWarehouse', data.warehouses, '请选择发货仓库', data.binding.warehouseId);
           model = data;
           const missing = (data.binding.freightId && !$('shippingFreight').value) || (data.binding.warehouseId && !$('shippingWarehouse').value);
+          const unavailable = [!data.freight.length ? '运费模板' : '', !data.warehouses.length ? '发货仓库' : ''].filter(Boolean);
           $('shippingBindingStatus').textContent = missing ? '已绑定的物流选项失效，请重新选择并保存；自动任务不会改用其他物流。'
+            : unavailable.length ? `妙手接口未返回当前店铺和站点的${unavailable.join('及')}。请确认已在妙手同步对应站点的配置，然后点击“重新读取”。`
             : data.binding.freightId ? '已手动绑定，后续编辑保存优先使用此配置。' : '尚未手动绑定，当前使用“通用／发货”自动匹配规则。';
         } else $('shippingBindingStatus').textContent = '请选择店铺与站点后读取可绑定的物流。';
       }
