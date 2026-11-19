@@ -521,11 +521,11 @@ function publishQuantityHarness(mode='live') {
   const state={config:{mode},jobs:{selected:new Map([['unrelated',{accountId:9}]])}};
   const nodes={sharedPublishCount:{value:'209'},sharedPublishInterval:{value:'2'}};
   const calls=[],pending=[];
-  function element(tag,text='') {return {tag,textContent:text,children:[],events:{},
-    addEventListener(event,handler){this.events[event]=handler;},replaceChildren(){this.children=[];},
+  function element(tag,text='') {return {tag,textContent:text,children:[],events:{},classList:{add(){},toggle(){}},
+    addEventListener(event,handler){this.events[event]=handler;},setAttribute(){},focus(){},replaceChildren(){this.children=[];},
     append(...children){this.children.push(...children);}};}
   const ctx=vm.createContext({state,$:id=>nodes[id],element,
-    input:(_,value,type)=>({...element('input'),value,type}),field:(text,child)=>{const node=element('label',text);node.append(child);return node;},
+    input:(_,value,type)=>({...element('input'),value,type}),select:(_,values)=>({...element('select'),value:values[0][0]}),window:{},field:(text,child)=>{const node=element('label',text);node.append(child);return node;},
     button:(text,action)=>({...element('button',text),action}),
     modal:()=>{const dialog={content:element('div'),message:{},overlay:{remove(){dialog.removed=true;}}};state.modal=dialog;return dialog;},
     params:()=>new URLSearchParams({page:'3',taskGroup:'publish',accountId:'2',shopId:'7',keyword:'glove',personKey:'1:11'}),
@@ -592,16 +592,18 @@ test('multi-shop dialog submits an independently limited quantity for every sele
   const choices=ctx.publishShopChoices();assert.equal(choices.length,4);
   assert.equal(choices.find(r=>r.key==='3:7').available,false);
   ctx.publishMultipleShops();const dialog=state.modal;
-  const buttons=dialog.content.children.flatMap(n=>[n,...n.children]).filter(n=>n.tag==='button');
-  const preview=buttons.find(n=>n.textContent==='预览所选店铺发布');assert.equal(preview.disabled,false);
-  buttons.find(n=>n.textContent==='清空店铺选择').action();assert.equal(preview.disabled,true);
-  await assert.rejects(preview.action(),/选择/);assert.equal(calls.length,0);
-  buttons.find(n=>n.textContent==='选择有待发布的店铺').action();assert.equal(preview.disabled,false);
   const walk=node=>[node,...node.children.flatMap(walk)];
-  const quantities=walk(dialog.content).filter(n=>n.type==='number'&&!n.max);
+  const find=text=>walk(dialog.content).find(n=>n.tag==='button'&&n.textContent===text);
+  const preview=find('预览所选店铺发布');assert.equal(preview.disabled,false);
+  find('清空店铺选择').action();assert.equal(preview.disabled,true);
+  await assert.rejects(preview.action(),/选择/);assert.equal(calls.length,0);
+  find('选择有待发布的店铺').action();assert.equal(preview.disabled,false);
+  let quantities=walk(dialog.content).filter(n=>n.type==='number'&&!n.max);
   quantities[0].value='2';quantities[0].events.input();
-  quantities[1].value='3';quantities[1].events.input();
-  quantities[3].value='1';quantities[3].events.input();
+  find('Account 2 · 2').action();
+  quantities=walk(dialog.content).filter(n=>n.type==='number'&&!n.max);
+  quantities[0].value='3';quantities[0].events.input();
+  quantities[1].value='1';quantities[1].events.input();
   const request=preview.action();assert.equal(calls[0].path,'publish-preview');
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body.filters)),{keyword:'glove',personKey:'1:11'});
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body.shopCounts)),[
@@ -627,6 +629,40 @@ function personOptionsHarness() {
   vm.runInContext(functions('  function personLabel','  function accountOptions'),ctx);
   return {ctx,state,nodes};
 }
+
+test('multi-shop pagination and search retain selections and quantities across accounts',async()=>{
+  const {ctx,state,nodes,calls,pending,plan}=publishQuantityHarness('demo');
+  state.config.accounts=[{id:1,configured:true},{id:2,configured:true}];
+  state.config.targets=[{accountId:1,shops:Array.from({length:15},(_,i)=>({shopId:i+1,shopNick:`First ${i+1}`})),sites:[]},
+    {accountId:2,shops:[{shopId:1,shopNick:'Second'}],sites:[]}];
+  state.jobs.shopPendingCounts=new Map([...Array.from({length:15},(_,i)=>[`1:${i+1}`,5]),['2:1',4]]);
+  nodes.sharedJobsShop={value:''};ctx.publishMultipleShops();const dialog=state.modal;
+  const walk=node=>[node,...node.children.flatMap(walk)];const button=text=>walk(dialog.content).find(n=>n.tag==='button'&&n.textContent===text);
+  const check=()=>walk(dialog.content).filter(n=>n.type==='checkbox');const quantities=()=>walk(dialog.content).filter(n=>n.type==='number'&&!n.max);
+  assert.equal(check().length,12);check()[0].checked=true;check()[0].events.change();quantities()[0].value='2';quantities()[0].events.input();
+  button('下一页').action();assert.equal(check().length,3);check()[0].checked=true;check()[0].events.change();quantities()[0].value='3';quantities()[0].events.input();
+  button('Account 2').action();check()[0].checked=true;check()[0].events.change();quantities()[0].value='4';quantities()[0].events.input();
+  button('Account 1 · 2').action();assert.equal(check()[0].checked,true);assert.equal(quantities()[0].value,'2');
+  const search=walk(dialog.content).find(n=>n.type==='search');search.value='13';search.events.input();assert.equal(check().length,1);assert.equal(check()[0].checked,true);assert.equal(quantities()[0].value,'3');
+  const request=button('预览所选店铺发布').action();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body.shopCounts)),[{accountId:1,shopId:1,publishCount:2},{accountId:1,shopId:13,publishCount:3},{accountId:2,shopId:1,publishCount:4}]);
+  pending[0].resolve(plan);await request;
+});
+
+test('multi-shop site filter is sent with preview and blocked for older backends',async()=>{
+  const {ctx,state,nodes,calls,pending,plan}=publishQuantityHarness('demo');
+  state.config.accounts=[{id:1,configured:true}];
+  state.config.targets=[{accountId:1,shops:[{shopId:7}],sites:[{key:'US',value:'美国'},{key:'CO',value:'哥伦比亚'}]}];
+  state.jobs.shopPendingCounts=new Map([['1:7',3]]);nodes.sharedJobsShop={value:'1:7'};
+  state.capabilities={publishSiteFilter:false};ctx.publishMultipleShops();
+  const walk=node=>[node,...node.children.flatMap(walk)], dialog=state.modal;
+  const site=walk(dialog.content).find(n=>n.tag==='select');site.value='CO';
+  const preview=walk(dialog.content).find(n=>n.textContent==='预览所选店铺发布');
+  await assert.rejects(preview.action(),/后台尚未更新/);assert.equal(calls.length,0);
+  state.capabilities.publishSiteFilter=true;const request=preview.action();
+  assert.equal(calls[0].body.filters.site,'CO');assert.equal(calls[0].body.filters.keyword,'glove');
+  pending[0].resolve(plan);await request;
+});
 
 test('person options group source accounts, preserve aliases and selection including unknown',()=>{
   const {ctx,state,nodes}=personOptionsHarness(), dropdown=nodes.sharedJobsPerson;

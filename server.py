@@ -74,7 +74,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.214'
+APP_VERSION = '1.2.215'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -3188,7 +3188,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                                  "safeFailureBatch": True, "performanceMetrics": True, "publishReceipts": True,
                                  "eventArchiveMinRetentionDays": 7, "pairDedupeAcrossPools": True,
                                  "eventArchivePreview": True, "zhiHouLogistics": True,
-                                 "zhiHouControlledWrites": True},
+                                 "zhiHouControlledWrites": True, "publishSiteFilter": True, "sitePreferences": True},
                 "processId": os.getpid(),
                 "concurrentEditing": True,
                 "multiShopPublishing": True,
@@ -3303,6 +3303,19 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
             except (sqlite3.Error, OSError):
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '尺码模板读取失败')
+            return
+        if route.path == '/api/settings/visible-sites':
+            if not self._same_origin():
+                self._error(HTTPStatus.FORBIDDEN, '只接受本地网页请求')
+                return
+            try:
+                path = DATA_ROOT / 'visible_sites.json'
+                sites = json.loads(path.read_text(encoding='utf-8')) if path.exists() else None
+                if sites is not None and (not isinstance(sites, list) or not all(isinstance(x, str) and x.isascii() and x.isalnum() and len(x) <= 20 for x in sites)):
+                    raise ValueError('站点配置格式不正确')
+                self._json(HTTPStatus.OK, {'data': {'sites': sites}})
+            except (OSError, ValueError, json.JSONDecodeError):
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '站点配置读取失败')
             return
         if route.path == '/api/settings/deepseek':
             if not self._same_origin():
@@ -3590,6 +3603,29 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self._error(HTTPStatus.BAD_REQUEST, str(error))
             except sqlite3.Error:
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '本机同步状态保存失败')
+            return
+        if route.path == '/api/settings/visible-sites':
+            if not self._local_configuration_origin():
+                self._error(HTTPStatus.FORBIDDEN, '站点配置只接受本机同源页面提交')
+                return
+            try:
+                body = self._read_body()
+                sites = body.get('sites')
+                if set(body) != {'sites'} or not isinstance(sites, list) or not sites or len(sites) > 200 or not all(isinstance(x, str) and x.isascii() and x.isalnum() and len(x) <= 20 for x in sites):
+                    raise ValueError('请至少选择一个有效站点')
+                sites = sorted(set(x.upper() for x in sites))
+                path = DATA_ROOT / 'visible_sites.json'
+                temp = path.with_name('visible_sites.' + uuid.uuid4().hex + '.tmp')
+                try:
+                    temp.write_text(json.dumps(sites, ensure_ascii=False), encoding='utf-8')
+                    os.replace(temp, path)
+                finally:
+                    temp.unlink(missing_ok=True)
+                self._json(HTTPStatus.OK, {'data': {'sites': sites}})
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                self._error(HTTPStatus.BAD_REQUEST, str(error))
+            except OSError:
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, '站点配置保存失败')
             return
         if route.path == '/api/settings/deepseek':
             if not self._local_configuration_origin():

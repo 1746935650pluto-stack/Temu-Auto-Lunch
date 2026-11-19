@@ -862,6 +862,7 @@
   }
   async function loadConfig(force = false) {
     const revision = state.revisions.config = (state.revisions.config || 0) + 1;
+    if (window.SitePreferences) await window.SitePreferences.ready;
     const response = await api('config' + (force ? '?refresh=1' : ''));
     if (revision !== state.revisions.config) return;
     state.config = response;
@@ -872,7 +873,7 @@
     updateShopOptions();
     updatePersonOptions();
     const site = $('sharedSite'), previousSite = site.value || 'US'; site.replaceChildren();
-    const sites = new Map(); state.config.targets.forEach(g => g.sites.forEach(s => sites.set(s.key, s.value || s.key)));
+    const sites = new Map(); state.config.targets.forEach(g => g.sites.filter(s => !window.SitePreferences || window.SitePreferences.allowed(s.key)).forEach(s => sites.set(s.key, s.value || s.key)));
     sites.forEach((label, key) => option(site, key, `${label} (${key})`)); site.value = sites.has(previousSite) ? previousSite : (sites.keys().next().value || '');
     if (state.config.errors.length) notice(state.config.errors.map(e => `${name(e.accountId)}：${e.message}`).join('；'));
     else $('sharedPoolNotice').textContent = '跨账号先创建副本；保存后等待你手动发布。原商品保留，各账号身份独立。';
@@ -1265,6 +1266,7 @@
     if(filters.keyword)dialog.content.append(element('p',`商品搜索：${filters.keyword}`));
     if(filters.sourceAccountId)dialog.content.append(element('p',`来源：${name(filters.sourceAccountId)}`));
     if(filters.personKey)dialog.content.append(element('p',`所属人员：${personLabel(filters.personKey)}`));
+    if(filters.site)dialog.content.append(element('p',`发布站点：${filters.site}`));
     for(const shop of plan.shops)dialog.content.append(element('p',plan.perShopCounts
       ? `${shopName(shop.accountId,shop.shopId)} · 填写 ${shop.requestedCount} 件 · 可发布 ${shop.availableCount} 件 · 本次 ${shop.count} 件`
       : `${shopName(shop.accountId,shop.shopId)} · ${shop.count} 件`));
@@ -1292,46 +1294,74 @@
     const dialog=modal('多店铺发布 · 选择店铺');
     const filters=Object.fromEntries(params('jobs'));
     for(const key of ['page','pageSize','taskGroup','accountId','shopId'])delete filters[key];
-    dialog.content.append(element('p','可跨账号勾选店铺，并分别填写每家店铺的发布数量；沿用当前商品搜索、来源和所属人员筛选。店铺待发布数仍为全店总数，符合筛选的实际数量以预览为准。'));
-    if(filters.keyword)dialog.content.append(element('p',`商品搜索：${filters.keyword}`));
-    if(filters.sourceAccountId)dialog.content.append(element('p',`来源：${name(filters.sourceAccountId)}`));
-    if(filters.personKey)dialog.content.append(element('p',`所属人员：${personLabel(filters.personKey)}`));
+    dialog.content.append(element('p','可跨账号选择店铺并分别填写发布数量；沿用当前商品搜索、来源和人员筛选。待发布数为全店总数，站点及其他筛选后的数量以预览为准。'));
     const settings=element('div','','shared-multi-publish-settings');
     const interval=input('', $('sharedPublishInterval').value,'number');interval.min='1';interval.max='600';interval.step='1';
-    settings.append(field('发布间隔（秒）',interval));dialog.content.append(settings);
-    const list=element('div','','shared-publish-shops'),choices=publishShopChoices(),checks=[];
-    let account;
+    const sites=new Map();
+    for(const group of state.config?.targets || [])for(const site of group.sites || [])
+      if(!window.SitePreferences || window.SitePreferences.allowed(site.key))sites.set(site.key,site.value || site.key);
+    const site=select('',[['','全部站点'],...[...sites].map(([key,label])=>[key,`${label} (${key})`])]);
+    settings.append(field('发布间隔（秒）',interval),field('发布站点筛选',site));dialog.content.append(settings);
+    if(!state.capabilities?.publishSiteFilter)dialog.content.append(element('p','站点筛选将在后台更新后可用；当前仍可按全部站点预览。','shared-target-empty'));
+    const choices=publishShopChoices(),checks=[];
+    const picker=element('section','','shared-target-picker shared-multi-shop-picker');
+    const heading=element('div','','shared-target-heading'),title=element('div'),count=element('span','已选 0 家','shared-target-count');
+    title.append(element('strong','目标店铺'),element('small','切换账号后选择店铺，并填写各店发布数量'));heading.append(title,count);
+    const tabs=element('div','','shared-target-tabs');tabs.setAttribute('aria-label','目标账号');
+    const tools=element('div','','shared-target-tools'),search=input('','','search');
+    search.placeholder='搜索当前账号的店铺名称或 ID';search.setAttribute('aria-label','搜索店铺名称或 ID');
+    const actions=element('div','','shared-actions');
+    const grid=element('div','','shared-target-grid');grid.setAttribute('aria-label','店铺列表');
+    const footer=element('div','','shared-target-footer'),info=element('span'),nav=element('div','','shared-target-navigation');
+    const previous=button('上一页',()=>{if(page>1){page--;render();}}),next=button('下一页',()=>{page++;render();});
+    previous.sharedDisabled=()=>page<=1;next.sharedDisabled=()=>page>=pages;let pages=1;nav.append(previous,next);footer.append(info,nav);
+    const accounts=[...new Set(choices.map(shop=>shop.accountId))];let account=accounts[0],page=1;
     for(const shop of choices) {
-      if(account!==shop.accountId){account=shop.accountId;list.append(element('h3',name(account)));}
-      const check=input('','','checkbox');check.disabled=!shop.available;
-      check.checked=shop.available && shop.key===$('sharedJobsShop').value;
+      const check=input('','','checkbox');check.disabled=!shop.available;check.checked=shop.available&&shop.key===$('sharedJobsShop').value;
       const quantity=input('',String(Math.min(Number($('sharedPublishCount').value)||50,shop.count||1)),'number');
-      quantity.min='1';quantity.step='1';quantity.disabled=!check.checked||!shop.available;
-      const label=element('label','','shared-publish-shop');
-      const quantityField=element('span','','shared-publish-quantity');
-      quantityField.append(element('span','发布数量'),quantity);
-      label.append(check,element('span',`${shopName(shop.accountId,shop.shopId)} · 待发布 ${shop.count ?? '—'}${shop.available?'':'（账号不可用）'}`),quantityField);
-      checks.push({check,quantity,shop});list.append(label);
+      quantity.min='1';quantity.step='1';quantity.disabled=!check.checked||!shop.available;quantity.setAttribute('aria-label',`${shopName(shop.accountId,shop.shopId)} 发布数量`);
+      const card=element('div','','shared-target-card shared-publish-card'),label=element('label','','shared-publish-card-label'),text=element('span','','shared-target-card-text');
+      const raw=state.config?.targets.find(g=>g.accountId===shop.accountId)?.shops.find(s=>Number(s.shopId)===shop.shopId);
+      text.append(element('strong',raw?.shopNick || raw?.platformShopName || `店铺 ${shop.shopId}`),element('small',`ID ${shop.shopId} · 待发布 ${shop.count ?? '—'}${shop.available?'':' · 账号不可用'}`));
+      label.append(check,text);const quantityField=element('label','','shared-publish-card-quantity');quantityField.append(element('span','发布数量'),quantity);card.append(label,quantityField);
+      checks.push({check,quantity,shop,card});
     }
-    const summary=element('p'),actions=element('div','','shared-actions');
+    const summary=element('p');
     const preview=button('预览所选店铺发布',async()=>{
       const selected=checks.filter(r=>r.check.checked&&!r.check.disabled).map(r=>({accountId:r.shop.accountId,shopId:r.shop.shopId,publishCount:Number(r.quantity.value)}));
       const n=selected.reduce((sum,shop)=>sum+shop.publishCount,0),seconds=Number(interval.value);
       if(!selected.length||selected.length>100)throw Error('请选择 1 到 100 家发布店铺');
       if(selected.some(shop=>!Number.isInteger(shop.publishCount)||shop.publishCount<1))throw Error('每个店铺的发布数量应为大于 0 的整数');
       if(!Number.isInteger(seconds)||seconds<1||seconds>600)throw Error('发布间隔应为 1 到 600 的整数秒');
-      await loadPublishPreview(dialog,n,seconds,filters,selected);
+      if(site.value&&!state.capabilities?.publishSiteFilter)throw Error('后台尚未更新，暂不能按站点筛选发布');
+      const selectedFilters={...filters};if(site.value)selectedFilters.site=site.value;
+      await loadPublishPreview(dialog,n,seconds,selectedFilters,selected);
     },true);
-    const update=()=>{
+    function update(){
       const selected=checks.filter(r=>r.check.checked&&!r.check.disabled),total=selected.reduce((sum,r)=>sum+Number(r.quantity.value),0);
       const valid=selected.every(r=>Number.isInteger(Number(r.quantity.value))&&Number(r.quantity.value)>=1);
       summary.textContent=`已选 ${selected.length} 家店铺 · 发布数量合计 ${Number.isFinite(total)?total:'—'} 件`;
-      preview.disabled=!selected.length||selected.length>100||!valid;
-    };
-    actions.append(button('选择有待发布的店铺',()=>{checks.forEach(r=>{r.check.checked=!r.check.disabled&&r.shop.count>0;r.quantity.disabled=!r.check.checked;});update();}),
-      button('清空店铺选择',()=>{checks.forEach(r=>{r.check.checked=false;r.quantity.disabled=true;});update();}));
-    checks.forEach(r=>{r.check.addEventListener('change',()=>{r.quantity.disabled=!r.check.checked;update();});r.quantity.addEventListener('input',update);});update();
-    dialog.content.append(actions,list,summary,preview);
+      count.textContent=`已选 ${selected.length} 家`;preview.disabled=!selected.length||selected.length>100||!valid;
+      checks.forEach(r=>r.card.classList.toggle('selected',r.check.checked));
+    }
+    function render(focusTab='') {
+      tabs.replaceChildren();for(const id of accounts){
+        const n=checks.filter(r=>r.shop.accountId===id&&r.check.checked&&!r.check.disabled).length;
+        const tab=button(`${name(id)}${n?` · ${n}`:''}`,()=>{account=id;page=1;render(String(id));});
+        tab.classList.add('shared-target-tab');tab.setAttribute('aria-pressed',String(id===account));tabs.append(tab);if(String(id)===focusTab)tab.focus({preventScroll:true});
+      }
+      const query=search.value.trim().toLocaleLowerCase();
+      const visible=checks.filter(r=>r.shop.accountId===account&&`${shopName(r.shop.accountId,r.shop.shopId)} ${r.shop.shopId}`.toLocaleLowerCase().includes(query));
+      pages=Math.max(1,Math.ceil(visible.length/12));page=Math.min(page,pages);grid.replaceChildren();
+      visible.slice((page-1)*12,page*12).forEach(r=>grid.append(r.card));
+      if(!visible.length)grid.append(element('p','没有找到匹配的店铺','shared-target-empty'));
+      info.textContent=`${visible.length} 家店铺 · 第 ${page} / ${pages} 页`;previous.disabled=page<=1;next.disabled=page>=pages;update();
+    }
+    actions.append(button('选择有待发布的店铺',()=>{checks.forEach(r=>{r.check.checked=!r.check.disabled&&r.shop.count>0;r.quantity.disabled=!r.check.checked;});render();}),
+      button('清空店铺选择',()=>{checks.forEach(r=>{r.check.checked=false;r.quantity.disabled=true;});render();}));
+    checks.forEach(r=>{r.check.addEventListener('change',()=>{r.quantity.disabled=!r.check.checked;update();});r.quantity.addEventListener('input',update);});
+    search.addEventListener('input',()=>{page=1;render();});tools.append(search,actions);
+    picker.append(heading,tabs,tools,grid,footer);dialog.content.append(picker,summary,preview);render();
   }
   async function publishSelected() {
     const jobs = [...state.jobs.selected.values()];

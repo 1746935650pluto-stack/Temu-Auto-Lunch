@@ -1255,6 +1255,40 @@ class SharedAutomationTests(unittest.TestCase):
             self.service.publish_preview({'publishCount':3,'filters':{'shops':[{'accountId':1,'shopId':7}]},'shopCounts':shop_counts})
         self.assertEqual(self.calls,[])
 
+    def test_multi_shop_preview_filters_exact_site_before_freezing(self):
+        self.ready_fixture(count=2)
+        pool = server.automation_pool(1)
+        item = sample_item(); item['title'] = 'Fixture glove CO'
+        pool.put_item(999, 'site', 0, item)
+        job = pool.queue_jobs([999], 7, 'CO')[0]
+        pool.update_job(job['jobId'], 'save', 'ready_publish', 'saved')
+        shops = [{'accountId':1, 'shopId':7, 'publishCount':5}]
+        plan = self.service.publish_preview({'publishCount':5,'filters':{'site':'CO','keyword':'glove'},'shopCounts':shops})
+        self.assertEqual(plan['count'],1)
+        self.assertEqual(plan['shops'][0]['availableCount'],1)
+        self.assertEqual({row['site'] for row in plan['sample']},{'CO'})
+        self.assertEqual(self.service.publish_preview({'publishCount':5,'filters':{'site':'US'},'shopCounts':shops})['count'],2)
+        with self.assertRaises(ValueError):
+            self.service.publish_preview({'publishCount':5,'filters':{'site':'CO!'},'shopCounts':shops})
+        self.assertEqual(self.calls,[])
+
+    def test_site_preferences_are_shared_and_do_not_modify_jobs(self):
+        self.ready_fixture(count=1)
+        before = self.service.job_rows()
+        with patch.dict(os.environ, {'APP_MODE':'demo'}):
+            code, result = self.request('GET','/api/settings/visible-sites')
+            self.assertEqual((code,result['data']['sites']),(200,None))
+            code, result = self.request('POST','/api/settings/visible-sites',{'sites':['co','US','CO']}, {'Origin':f'http://127.0.0.1:{self.httpd.server_port}'})
+            self.assertEqual((code,result['data']['sites']),(200,['CO','US']))
+            code, result = self.request('GET','/api/settings/visible-sites')
+            self.assertEqual(result['data']['sites'],['CO','US'])
+            code, result = self.request('POST','/api/settings/visible-sites',{'sites':[]}, {'Origin':f'http://127.0.0.1:{self.httpd.server_port}'})
+            self.assertEqual(code,400)
+            code, result = self.request('GET','/api/settings/visible-sites')
+            self.assertEqual(result['data']['sites'],['CO','US'])
+        self.assertEqual(self.service.job_rows(),before)
+        self.assertEqual(self.calls,[])
+
     def test_multi_shop_frozen_preview_releases_exact_account_qualified_jobs(self):
         self.ready_fixture()
         self.ready_fixture(account=2)

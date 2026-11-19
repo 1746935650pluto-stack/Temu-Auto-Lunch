@@ -1654,7 +1654,7 @@ class SharedAutomation:
             raise ValueError('发布间隔应为 1 到 600 的整数秒')
         filters = body.get('filters', {})
         shop_counts = body.get('shopCounts')
-        if not isinstance(filters, dict) or set(filters) - {'accountId', 'shopId', 'sourceAccountId', 'keyword', 'status', 'shops', 'personKey', 'poolId'}:
+        if not isinstance(filters, dict) or set(filters) - {'accountId', 'shopId', 'sourceAccountId', 'keyword', 'status', 'shops', 'personKey', 'poolId', 'site'}:
             raise ValueError('发布筛选条件不正确')
         query = {}
         selected_shops = None
@@ -1699,6 +1699,11 @@ class SharedAutomation:
         if filters.get('status') not in (None, '', 'ready_publish'):
             raise ValueError('只能按待发布状态预览')
         rows = self.filter_rows([r for r in self.job_rows() if r['status'] == 'ready_publish'], query)
+        site = filters.get('site', '')
+        if site:
+            if not site.isascii() or not site.isalnum() or len(site) > 20:
+                raise ValueError('发布站点筛选不正确')
+            rows = [row for row in rows if str(row.get('site', '')).upper() == site.upper()]
         if selected_shops is not None:
             for account, _ in selected_shops:
                 self.check_account(account)

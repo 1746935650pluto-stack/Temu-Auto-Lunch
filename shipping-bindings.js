@@ -1,3 +1,66 @@
+/* One local backend preference controls site choices in every workbench view. */
+(() => {
+  if (!document.getElementById('visibleSitesOptions')) return;
+  let selected = null, available = [], readyOk = false, revision = 0;
+  const byId = id => document.getElementById(id);
+  async function request(url, init) {
+    const response = await fetch(url, init), data = await response.json();
+    if (!response.ok) throw Error(data.error || '站点设置读取失败');
+    return data.data;
+  }
+  const ready = request('/api/settings/visible-sites', {cache:'no-store'}).then(data=>{
+    selected = data.sites === null ? null : new Set(data.sites);readyOk=true;
+  }).catch(()=>{const status=byId('visibleSitesStatus');if(status)status.textContent='后台尚未更新或站点配置读取失败，暂时显示全部站点。';});
+  function allowed(key){return selected===null || selected.has(String(key).toUpperCase());}
+  function apply() {
+    for(const id of ['liveSite','editSite','automationPublishSite','autoTaskSite','sharedSite','shippingSite']) {
+      const select=byId(id);if(!select)continue;
+      for(const option of select.options) {
+        const hidden=!!option.value && !allowed(option.value);
+        option.hidden=hidden;option.disabled=hidden;
+      }
+      if(select.value && !allowed(select.value)) {select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));}
+    }
+  }
+  async function open() {
+    await ready;const box=byId('visibleSitesOptions'),status=byId('visibleSitesStatus');if(!box)return;
+    if(!readyOk){box.textContent='站点总控将在后台更新后可用。';return;}
+    try {
+      const response=await request('/api/sites',{cache:'no-store'});
+      available=response.data?.publishSiteOptions || [];
+      for (const key of selected || []) if(!available.some(row=>String(row.key).toUpperCase()===key)) available.push({key,value:key});box.replaceChildren();
+      if(!available.length){box.textContent='未读取到可用站点，请检查采集箱连接。';return;}
+      for(const row of available){const label=document.createElement('label'),check=document.createElement('input');
+        check.type='checkbox';check.value=String(row.key).toUpperCase();check.checked=allowed(check.value);
+        label.append(check,document.createTextNode(`${row.value || row.key} (${row.key})`));box.append(label);}
+      status.textContent='勾选需要的站点后保存。';
+    } catch(error){box.textContent='站点读取失败';status.textContent=error.message;}
+  }
+  byId('refreshVisibleSites')?.addEventListener('click',open);
+  byId('selectAllVisibleSites')?.addEventListener('click',()=>byId('visibleSitesOptions').querySelectorAll('input').forEach(input=>input.checked=true));
+  byId('saveVisibleSites')?.addEventListener('click',async()=>{
+    const status=byId('visibleSitesStatus'),sites=[...byId('visibleSitesOptions').querySelectorAll('input')].filter(input=>input.checked).map(input=>input.value);
+    if(!readyOk){status.textContent='后台尚未更新或站点配置读取失败。';return;}
+    if(!sites.length){status.textContent='请至少选择一个站点。';return;}
+    const token=++revision;
+    try {const result=await request('/api/settings/visible-sites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sites})});
+      if(token!==revision)return;selected=new Set(result.sites);apply();status.textContent='已保存，站点选择已更新。';
+    } catch(error){status.textContent='保存失败：'+error.message;}
+  });
+  const ids=new Set(['liveSite','editSite','automationPublishSite','autoTaskSite','sharedSite','shippingSite']);
+  const observer=new MutationObserver(records=>{if(records.some(record=>ids.has(record.target.id) || ids.has(record.target.parentNode?.id)))apply();});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  async function refresh() {
+    if(!readyOk)return;
+    const token=++revision;
+    try {const result=await request('/api/settings/visible-sites',{cache:'no-store'});
+      if(token!==revision)return;selected=result.sites===null?null:new Set(result.sites);apply();
+    } catch (_) { /* Keep the last confirmed choices on a transient read failure. */ }
+  }
+  window.addEventListener?.('focus', refresh);
+  window.SitePreferences={ready,allowed,apply,open};ready.then(apply);
+})();
+
 /* Explicit local logistics defaults, isolated by account, shop and site. */
 (() => {
   const $ = id => document.getElementById(id);
@@ -44,6 +107,7 @@
       if (level !== 'accounts' && account) query.set('accountId', account);
       if (level === 'selection' && account && shop && site) { query.set('shopId', shop); query.set('site', site); }
       if (refresh) query.set('refresh', '1');
+      if (window.SitePreferences) await window.SitePreferences.ready;
       const data = await request('/api/settings/shipping?' + query, {signal: controller.signal});
       if (token !== version) return;
       if (level === 'accounts') {
@@ -53,7 +117,8 @@
         if (String(data.accountId) !== account) throw new Error('返回账号不一致，请重新读取');
         if (level === 'account') {
           options('shippingShop', data.shops, '请选择店铺');
-          options('shippingSite', data.sites, '请选择站点', data.sites.some(row => row.id === 'US') ? 'US' : '');
+          const sites = data.sites.filter(row => !window.SitePreferences || window.SitePreferences.allowed(row.id));
+          options('shippingSite', sites, '请选择站点', sites.some(row => row.id === 'US') ? 'US' : '');
         }
         if (level === 'selection' && shop && site) {
           if (String(data.shopId) !== shop || data.site !== site || !data.binding) throw new Error('返回店铺或站点不一致，请重新读取');

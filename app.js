@@ -169,7 +169,7 @@ function navigateLiveFlow(stage) {
 function activatePage(pageId) {
   window.workbenchNavigation?.record(pageId, activeOrderAccountId);
   if (pageId !== 'collectionAccount') clearCollectionCredentialInputs();
-  if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); window.shippingBindings?.open(); }
+  if (pageId === 'settings') { loadCollectionAccountManager(); loadDeepSeekSettings(); loadDeepSeekProfiles(); window.pricingWorkbench?.settingsOpen(); window.shippingBindings?.open(); window.SitePreferences?.open(); }
   else { clearDeepSeekInput(); window.shippingBindings?.close(); }
   const displayPage = pageId;
   window.dataStatistics?.setPage(pageId);
@@ -1786,6 +1786,7 @@ async function loadAutomationShops() {
   renderAutomationPool();
 }
 async function loadAutomationSites() {
+  if (window.SitePreferences) await window.SitePreferences.ready;
   const select = $('#automationPublishSite');
   const previous = select.value || automationPreferences().site || '';
   let sites = [...$('#liveSite').options].filter((option) => /^[a-z0-9]+$/i.test(option.value))
@@ -1802,6 +1803,7 @@ async function loadAutomationSites() {
     }
   }
   select.replaceChildren(); appendOption(select, '', '请选择发布站点');
+  sites = sites.filter(site => !window.SitePreferences || window.SitePreferences.allowed(site.key));
   sites.filter((site) => site.key !== 'EU').forEach((site) => appendOption(select, site.key, site.label));
   if (sites.some((site) => site.key === previous)) select.value = previous;
   updateAutomationControls();
@@ -2813,7 +2815,8 @@ async function loadLiveCatalog(refresh = false) {
     showToast(`店铺读取失败：${results[0].reason.message}`);
   }
   if (results[1].status === 'fulfilled') {
-    const sites = results[1].value.data?.publishSiteOptions || [];
+    if (window.SitePreferences) await window.SitePreferences.ready;
+    const sites = (results[1].value.data?.publishSiteOptions || []).filter(site => !window.SitePreferences || window.SitePreferences.allowed(site.key));
     siteSelect.replaceChildren(); appendOption(siteSelect, '', '请选择站点');
     sites.forEach((site) => appendOption(siteSelect, site.key, `${site.value || site.key} (${site.key})`));
     if ([...siteSelect.options].some((option) => option.value === 'US')) siteSelect.value = 'US';

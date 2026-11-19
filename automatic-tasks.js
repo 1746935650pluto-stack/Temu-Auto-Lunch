@@ -54,7 +54,7 @@
       option(select, '', '请先选择发布店铺'); select.disabled = true; return;
     }
     const account = Number(selectedShop.split(':')[0]);
-    const available = config.targets.find(t => t.accountId === account)?.sites || [];
+    const available = (config.targets.find(t => t.accountId === account)?.sites || []).filter(site => !window.SitePreferences || window.SitePreferences.allowed(site.key));
     if (!available.length) {
       option(select, '', '该账号没有可用发布站点'); select.disabled = true; return;
     }
@@ -68,6 +68,7 @@
     const revision = ++optionsRevision; optionsReady = false; controls();
     for (const id of ['autoTaskSource', 'autoTaskPerson', 'autoTaskShop', 'autoTaskSite']) $(id).disabled = true;
     try {
+      if (window.SitePreferences) await window.SitePreferences.ready;
       const data = await api('options'); if (revision !== optionsRevision) return;
       if (!Array.isArray(data.accounts) || !Array.isArray(data.targets) || !Array.isArray(data.people)) throw Error('配置响应不完整');
       config = data;
