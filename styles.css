@@ -592,7 +592,8 @@ body.task-columns-resizing { user-select: none; cursor: col-resize; }
 .shared-message { padding: 12px 16px; background: #eff4ff; border-radius: 8px; color: #4a6284; overflow-wrap: anywhere; }.shared-error { color: #b33148 !important; }
 .button.shared-delete { color: #b4233a; border-color: #efc8d0; background: #fff; }
 .shared-transfer { padding: 14px; margin: 12px 0; border: 1px solid #f0d2b0; background: #fff8eb; border-radius: 9px; }
-.shared-modal-card { width: min(950px, 100%); }.shared-modal-close { float: right; margin: 0 0 14px 14px; }.shared-modal-card label { display: block; margin: 12px 0; }.shared-modal-card .button { margin-right: 8px; margin-bottom: 8px; }.shared-modal-card ol { font-size: 12px; color: #60708a; padding-left: 22px; }
+.shared-modal-shell { width: min(950px, 100%); max-height: min(760px, calc(100vh - 44px)); overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(0,0,0,.25); }
+.shared-modal-card { width: 100%; border-radius: 0; box-shadow: none; }.shared-modal-close { float: right; margin: 0 0 14px 14px; }.shared-modal-card label { display: block; margin: 12px 0; }.shared-modal-card .button { margin-right: 8px; margin-bottom: 8px; }.shared-modal-card ol { font-size: 12px; color: #60708a; padding-left: 22px; }
 .shared-preview-actions { position: sticky; top: 0; z-index: 2; background: #fff; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .shared-preview-actions .shared-message { margin: 0 0 8px; }
 @media (max-width: 720px) { .shared-config, .shared-toolbar { grid-template-columns: 1fr; padding: 12px; }.shared-row { grid-template-columns: 18px minmax(0, 1fr); }.shared-row img { display: none; } }
@@ -1087,3 +1088,15 @@ button.proportion-row:hover, .proportion-row.is-selected { border-color: #b5cefa
 .site-preference-grid { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .site-preference-grid label { display:flex; align-items:center; gap:6px; padding:7px 10px; border:1px solid #dce6f5; border-radius:8px; background:#fff; }
 .site-preference-grid input { width:16px; height:16px; accent-color:#2165ed; }
+
+.visible-sites-summary { display:flex; align-items:center; gap:10px; cursor:pointer; list-style:none; }
+.visible-sites-summary::-webkit-details-marker { display:none; }
+.visible-sites-summary::before { content:"▸"; color:#6483ad; font-size:16px; transition:transform .15s; }
+.visible-sites-panel[open] > .visible-sites-summary::before { transform:rotate(90deg); }
+.visible-sites-summary h2 { margin:0; font-size:16px; letter-spacing:-.2px; }
+.visible-sites-toggle { margin-left:auto; color:#7185a4; font-size:12px; font-weight:500; }
+.visible-sites-content { margin-top:16px; }
+.visible-sites-content .collection-manager-help { margin:0; }
+.visible-sites-content .collection-manager-heading { gap:12px; flex-wrap:wrap; }
+
+.shared-modal-shell.shared-multi-publish-shell { width: min(1450px, 100%); }

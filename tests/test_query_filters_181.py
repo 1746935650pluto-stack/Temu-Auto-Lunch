@@ -22,6 +22,24 @@ class QueryFilters181Tests(QueryFixture):
                        (status, '2026-10-21T01:00:00+00:00', job_id))
         return job_id
 
+    def test_site_counts_use_local_shards_and_exclude_deleted_and_running_publication(self):
+        jobs = [self.physical_job(1, 1, 1001, 'ready_publish'),
+                self.physical_job(1, 2, 1002, 'ready_publish'),
+                self.physical_job(1, 3, 1003, 'ready_publish'),
+                self.physical_job(2, 1, 1004, 'ready_publish'),
+                self.physical_job(1, 1, 1005, 'ready_publish'),
+                self.physical_job(1, 1, 1006, 'failed')]
+        for account, number, index in [(1,1,0),(1,2,1),(1,3,2),(2,1,3),(1,1,4)]:
+            with closing(self.pools[account].pools[number-1]._connect()) as db, db:
+                db.execute('UPDATE automation_jobs SET site=? WHERE job_id=?', ('CO',jobs[index]))
+        pool=self.pools[1].pools[0]
+        with closing(pool._connect()) as db, db:
+            db.execute('INSERT INTO automation_job_deletions (job_id,deleted_at) VALUES (?,?)',(jobs[4],'fixture'))
+        self.pools[1].pools[2].begin_publish_batch([jobs[2]],1)
+        counts=TaskQueries(self.service).publish_site_counts()['counts']
+        self.assertEqual(counts,[{'accountId':1,'shopId':7,'site':'CO','count':2},
+                                 {'accountId':2,'shopId':7,'site':'CO','count':1}])
+
     def test_status_mixed_pages_keep_tab_counts_and_hydrate_only_the_page(self):
         for index in range(35):
             self.physical_job(1, index % 3 + 1, 200 + index, 'needs_review')

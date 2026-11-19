@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1.2.215" />
+    <link rel="stylesheet" href="./styles.css?v=1.2.216" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-footer">
           <div class="api-state"><i id="apiStateDot"></i><span id="apiStateText">妙手接口待配置</span></div>
-          <span class="app-version" data-resource-version="1.2.215">当前版本 V1.2.215</span>
+          <span class="app-version" data-resource-version="1.2.216">当前版本 V1.2.216</span>
         </div>
       </aside>
       <div class="pane-resizer app-sidebar-resizer" id="appSidebarResizer" role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" title="拖动调整侧边栏宽度"></div>
@@ -655,11 +655,15 @@
             </section>
               <div class="settings-primary">
                 <section class="collection-account-manager settings-sites" aria-labelledby="visibleSitesTitle">
-                  <div class="collection-manager-heading"><h2 id="visibleSitesTitle">可选站点</h2><button type="button" class="button subtle" id="refreshVisibleSites">重新读取</button></div>
-                  <p class="collection-manager-help">选择工作台需要显示的站点，适用于发布、编辑、自动任务和物流设置。已有任务与历史数据不受影响。</p>
-                  <div id="visibleSitesOptions" class="site-preference-grid">正在读取站点…</div>
-                  <div class="shared-actions"><button type="button" class="button subtle" id="selectAllVisibleSites">全选</button><button type="button" class="button primary" id="saveVisibleSites">保存可选站点</button></div>
-                  <p id="visibleSitesStatus" role="status" aria-live="polite"></p>
+                  <details class="visible-sites-panel">
+                    <summary class="visible-sites-summary"><h2 id="visibleSitesTitle">可选站点</h2><span class="visible-sites-toggle">展开／收起</span></summary>
+                    <div class="visible-sites-content">
+                      <div class="collection-manager-heading"><p class="collection-manager-help">选择工作台需要显示的站点，适用于发布、编辑、自动任务和物流设置。已有任务与历史数据不受影响。</p><button type="button" class="button subtle" id="refreshVisibleSites">重新读取</button></div>
+                      <div id="visibleSitesOptions" class="site-preference-grid">正在读取站点…</div>
+                      <div class="shared-actions"><button type="button" class="button subtle" id="selectAllVisibleSites">全选</button><button type="button" class="button primary" id="saveVisibleSites">保存可选站点</button></div>
+                      <p id="visibleSitesStatus" role="status" aria-live="polite"></p>
+                    </div>
+                  </details>
                 </section>
                 <section class="collection-account-manager settings-shipping" aria-labelledby="shippingBindingTitle">
                   <div class="collection-manager-heading"><h2 id="shippingBindingTitle">运费模板与发货仓库</h2><button type="button" class="button subtle" id="refreshShippingBinding">重新读取</button></div>
@@ -781,24 +785,24 @@
     </div>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="./proportion-chart.js?v=1.2.215&build=2"></script>
-    <script src="./data-statistics.js?v=1.2.215"></script>
-    <script src="./order-shop-chart.js?v=1.2.215"></script>
-    <script src="./navigation-state.js?v=1.2.215"></script>
-    <script src="./account-context.js?v=1.2.215"></script>
-  <script src="./shipping-bindings.js?v=1.2.215"></script>
-  <script src="./local-view-cache.js?v=1.2.215"></script>
-  <script src="./live-status.js?v=1.2.215"></script>
+    <script src="./proportion-chart.js?v=1.2.216&build=2"></script>
+    <script src="./data-statistics.js?v=1.2.216"></script>
+    <script src="./order-shop-chart.js?v=1.2.216"></script>
+    <script src="./navigation-state.js?v=1.2.216"></script>
+    <script src="./account-context.js?v=1.2.216"></script>
+  <script src="./shipping-bindings.js?v=1.2.216"></script>
+  <script src="./local-view-cache.js?v=1.2.216"></script>
+  <script src="./live-status.js?v=1.2.216"></script>
   <script src="./virtual-list.js?v=1.2.173"></script>
-  <script src="./diagnostics-panel.js?v=1.2.215"></script>
-  <script src="./shared-automation.js?v=1.2.215"></script>
-  <script src="./pricing-workbench.js?v=1.2.215"></script>
-  <script src="./app.js?v=1.2.215"></script>
+  <script src="./diagnostics-panel.js?v=1.2.216"></script>
+  <script src="./shared-automation.js?v=1.2.216"></script>
+  <script src="./pricing-workbench.js?v=1.2.216"></script>
+  <script src="./app.js?v=1.2.216"></script>
     <script src="./collection-sync.js?v=1.2.173"></script>
-    <script src="./automatic-tasks.js?v=1.2.215"></script>
-    <script src="./desktop-ui.js?v=1.2.215"></script>
-    <script src="./size-reference.js?v=1.2.215"></script>
-    <script src="./live-editor.js?v=1.2.215"></script>
+    <script src="./automatic-tasks.js?v=1.2.216"></script>
+    <script src="./desktop-ui.js?v=1.2.216"></script>
+    <script src="./size-reference.js?v=1.2.216"></script>
+    <script src="./live-editor.js?v=1.2.216"></script>
     <script src="./zhihou.js?v=1.2.173"></script>
   </body>
 </html>

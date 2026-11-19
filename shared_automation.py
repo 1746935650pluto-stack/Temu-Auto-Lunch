@@ -2398,6 +2398,8 @@ class SharedAutomation:
                         data.get(k) for k in ('running','editing','publishWorker','autoTasksBusy','reloading'))
                 elif suffix == 'activity':
                     data = self.activity_events.snapshot()
+                elif suffix == 'publish-site-counts':
+                    data = TaskQueries(self).publish_site_counts()
                 elif suffix == 'summary':
                     data = TaskQueries(self).summary()
                 elif suffix in {'pool', 'jobs', 'queue'}:

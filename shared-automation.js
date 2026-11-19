@@ -256,17 +256,18 @@
   function modal(title) {
     state.modal?.dismiss?.();
     const overlay = element('div', '', 'modal shared-modal'); overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+    const shell = element('div', '', 'shared-modal-shell');
     const card = element('div', '', 'modal-card shared-modal-card');
     const heading = element('h2', title); heading.id = 'sharedDialogTitle'; overlay.setAttribute('aria-labelledby', heading.id);
     const abortController = new AbortController();
-    const value = {overlay, card, content: null, message: null, heading, abortController, closed: false};
+    const value = {overlay, shell, card, content: null, message: null, heading, abortController, closed: false};
     const dismiss = () => {value.closed = true; abortController.abort(); overlay.remove(); if (state.modal === value) state.modal = null;};
     value.dismiss = dismiss;
     const close = button('关闭', dismiss);
     close.classList.add('shared-modal-close');
     const content = element('div'), message = element('p', '', 'shared-message'); message.setAttribute('role', 'status');
     value.content = content; value.message = message;
-    card.append(close, heading, content, message); overlay.append(card); document.body.append(overlay);
+    card.append(close, heading, content, message); shell.append(card); overlay.append(shell); document.body.append(overlay);
     state.modal = value; close.focus(); return value;
   }
   function pager(kind, response) {
@@ -1292,17 +1293,20 @@
   }
   function publishMultipleShops() {
     const dialog=modal('多店铺发布 · 选择店铺');
+    dialog.shell?.classList.add('shared-multi-publish-shell');
     const filters=Object.fromEntries(params('jobs'));
     for(const key of ['page','pageSize','taskGroup','accountId','shopId'])delete filters[key];
-    dialog.content.append(element('p','可跨账号选择店铺并分别填写发布数量；沿用当前商品搜索、来源和人员筛选。待发布数为全店总数，站点及其他筛选后的数量以预览为准。'));
+    dialog.content.append(element('p','可跨账号选择店铺并分别填写发布数量；沿用当前商品搜索、来源和人员筛选。待发布数按所选站点统计，商品搜索、来源和人员筛选后的实际数量以预览为准。'));
     const settings=element('div','','shared-multi-publish-settings');
     const interval=input('', $('sharedPublishInterval').value,'number');interval.min='1';interval.max='600';interval.step='1';
     const sites=new Map();
     for(const group of state.config?.targets || [])for(const site of group.sites || [])
       if(!window.SitePreferences || window.SitePreferences.allowed(site.key))sites.set(site.key,site.value || site.key);
     const site=select('',[['','全部站点'],...[...sites].map(([key,label])=>[key,`${label} (${key})`])]);
+    site.disabled=true;let siteCounts=null;
+    const siteStatus=element('p',state.capabilities?.publishSiteCounts ? '正在读取各站点待发布数量…' : '站点数量筛选需要更新后台，当前显示全部站点数量。','shared-target-empty');
     settings.append(field('发布间隔（秒）',interval),field('发布站点筛选',site));dialog.content.append(settings);
-    if(!state.capabilities?.publishSiteFilter)dialog.content.append(element('p','站点筛选将在后台更新后可用；当前仍可按全部站点预览。','shared-target-empty'));
+    dialog.content.append(siteStatus);
     const choices=publishShopChoices(),checks=[];
     const picker=element('section','','shared-target-picker shared-multi-shop-picker');
     const heading=element('div','','shared-target-heading'),title=element('div'),count=element('span','已选 0 家','shared-target-count');
@@ -1322,9 +1326,10 @@
       quantity.min='1';quantity.step='1';quantity.disabled=!check.checked||!shop.available;quantity.setAttribute('aria-label',`${shopName(shop.accountId,shop.shopId)} 发布数量`);
       const card=element('div','','shared-target-card shared-publish-card'),label=element('label','','shared-publish-card-label'),text=element('span','','shared-target-card-text');
       const raw=state.config?.targets.find(g=>g.accountId===shop.accountId)?.shops.find(s=>Number(s.shopId)===shop.shopId);
-      text.append(element('strong',raw?.shopNick || raw?.platformShopName || `店铺 ${shop.shopId}`),element('small',`ID ${shop.shopId} · 待发布 ${shop.count ?? '—'}${shop.available?'':' · 账号不可用'}`));
+      const countText=element('small');
+      text.append(element('strong',raw?.shopNick || raw?.platformShopName || `店铺 ${shop.shopId}`),countText);
       label.append(check,text);const quantityField=element('label','','shared-publish-card-quantity');quantityField.append(element('span','发布数量'),quantity);card.append(label,quantityField);
-      checks.push({check,quantity,shop,card});
+      checks.push({check,quantity,shop,card,countText,quantityTouched:false});
     }
     const summary=element('p');
     const preview=button('预览所选店铺发布',async()=>{
@@ -1333,10 +1338,18 @@
       if(!selected.length||selected.length>100)throw Error('请选择 1 到 100 家发布店铺');
       if(selected.some(shop=>!Number.isInteger(shop.publishCount)||shop.publishCount<1))throw Error('每个店铺的发布数量应为大于 0 的整数');
       if(!Number.isInteger(seconds)||seconds<1||seconds>600)throw Error('发布间隔应为 1 到 600 的整数秒');
-      if(site.value&&!state.capabilities?.publishSiteFilter)throw Error('后台尚未更新，暂不能按站点筛选发布');
+      if(site.value&&(!state.capabilities?.publishSiteFilter||!siteCounts))throw Error('站点数量尚未读取成功，暂不能按站点筛选发布');
       const selectedFilters={...filters};if(site.value)selectedFilters.site=site.value;
       await loadPublishPreview(dialog,n,seconds,selectedFilters,selected);
     },true);
+    function currentCount(row){return site.value ? (siteCounts ? (siteCounts.get(`${row.shop.key}:${site.value.toUpperCase()}`) ?? 0) : null) : row.shop.count;}
+    function refreshCounts(){
+      for(const row of checks){const n=currentCount(row);
+        row.countText.textContent=`ID ${row.shop.shopId} · 待发布 ${n ?? '—'}${row.shop.available?'':' · 账号不可用'}`;
+        if(!row.quantityTouched)row.quantity.value=String(Math.min(Number($('sharedPublishCount').value)||50,n||1));
+      }
+      update();
+    }
     function update(){
       const selected=checks.filter(r=>r.check.checked&&!r.check.disabled),total=selected.reduce((sum,r)=>sum+Number(r.quantity.value),0);
       const valid=selected.every(r=>Number.isInteger(Number(r.quantity.value))&&Number(r.quantity.value)>=1);
@@ -1357,11 +1370,23 @@
       if(!visible.length)grid.append(element('p','没有找到匹配的店铺','shared-target-empty'));
       info.textContent=`${visible.length} 家店铺 · 第 ${page} / ${pages} 页`;previous.disabled=page<=1;next.disabled=page>=pages;update();
     }
-    actions.append(button('选择有待发布的店铺',()=>{checks.forEach(r=>{r.check.checked=!r.check.disabled&&r.shop.count>0;r.quantity.disabled=!r.check.checked;});render();}),
+    actions.append(button('选择有待发布的店铺',()=>{checks.forEach(r=>{r.check.checked=!r.check.disabled&&currentCount(r)>0;r.quantity.disabled=!r.check.checked;});render();}),
       button('清空店铺选择',()=>{checks.forEach(r=>{r.check.checked=false;r.quantity.disabled=true;});render();}));
-    checks.forEach(r=>{r.check.addEventListener('change',()=>{r.quantity.disabled=!r.check.checked;update();});r.quantity.addEventListener('input',update);});
+    checks.forEach(r=>{r.check.addEventListener('change',()=>{r.quantity.disabled=!r.check.checked;update();});r.quantity.addEventListener('input',()=>{r.quantityTouched=true;update();});});
+    site.addEventListener('change',refreshCounts);
     search.addEventListener('input',()=>{page=1;render();});tools.append(search,actions);
-    picker.append(heading,tabs,tools,grid,footer);dialog.content.append(picker,summary,preview);render();
+    picker.append(heading,tabs,tools,grid,footer);dialog.content.append(picker,summary,preview);render();refreshCounts();
+    if(state.capabilities?.publishSiteCounts)api('publish-site-counts',undefined,dialog.abortController ? {signal:dialog.abortController.signal} : {}).then(data=>{
+      if(state.modal!==dialog||dialog.closed)return;
+      const next=new Map();
+      if(!Array.isArray(data.counts)||!data.counts.every(row=>{
+        if(!Number.isSafeInteger(row.accountId)||row.accountId<1||!Number.isSafeInteger(row.shopId)||row.shopId<1||
+           typeof row.site!=='string'||!Number.isSafeInteger(row.count)||row.count<0)return false;
+        const key=`${row.accountId}:${row.shopId}:${row.site.toUpperCase()}`;
+        if(next.has(key))return false;next.set(key,row.count);return true;
+      }))throw Error('站点数量数据不完整');
+      siteCounts=next;site.disabled=false;siteStatus.textContent='';refreshCounts();
+    }).catch(()=>{if(state.modal===dialog&&!dialog.closed)siteStatus.textContent='站点数量读取失败，请关闭后重试；全部站点仍可预览。';});
   }
   async function publishSelected() {
     const jobs = [...state.jobs.selected.values()];

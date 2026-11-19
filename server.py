@@ -74,7 +74,7 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 ACCOUNT_SLOT_STORE = AccountSlotStore(DATA_ROOT / 'account_slots.sqlite3')
 # Keep a build marker adjacent to the version so an equal-length version bump
 # cannot reuse a stale timestamp-based Python bytecode cache on Windows.
-APP_VERSION = '1.2.215'
+APP_VERSION = '1.2.216'
 DAILY_STATISTICS = DailyStatistics()
 ACCOUNT_CONFIG_LOCK = RLock()
 ACCOUNT_MUTATIONS_ACTIVE = 0
@@ -3188,7 +3188,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                                  "safeFailureBatch": True, "performanceMetrics": True, "publishReceipts": True,
                                  "eventArchiveMinRetentionDays": 7, "pairDedupeAcrossPools": True,
                                  "eventArchivePreview": True, "zhiHouLogistics": True,
-                                 "zhiHouControlledWrites": True, "publishSiteFilter": True, "sitePreferences": True},
+                                 "zhiHouControlledWrites": True, "publishSiteFilter": True, "sitePreferences": True, "publishSiteCounts": True},
                 "processId": os.getpid(),
                 "concurrentEditing": True,
                 "multiShopPublishing": True,

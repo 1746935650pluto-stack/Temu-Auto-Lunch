@@ -649,19 +649,39 @@ test('multi-shop pagination and search retain selections and quantities across a
   pending[0].resolve(plan);await request;
 });
 
-test('multi-shop site filter is sent with preview and blocked for older backends',async()=>{
+test('site counts update cards, bulk selection and preview without overwriting manual quantities',async()=>{
   const {ctx,state,nodes,calls,pending,plan}=publishQuantityHarness('demo');
-  state.config.accounts=[{id:1,configured:true}];
-  state.config.targets=[{accountId:1,shops:[{shopId:7}],sites:[{key:'US',value:'美国'},{key:'CO',value:'哥伦比亚'}]}];
+  state.config.accounts=[{id:1,configured:true},{id:2,configured:true}];
+  state.config.targets=[{accountId:1,shops:[{shopId:7},{shopId:8}],sites:[{key:'US',value:'美国'},{key:'CO',value:'哥伦比亚'}]},
+    {accountId:2,shops:[{shopId:7}],sites:[{key:'CO',value:'哥伦比亚'}]}];
+  state.jobs.shopPendingCounts=new Map([['1:7',30],['1:8',20],['2:7',10]]);nodes.sharedJobsShop={value:''};
+  state.capabilities={publishSiteFilter:true,publishSiteCounts:true};ctx.publishMultipleShops();
+  const walk=node=>[node,...node.children.flatMap(walk)],dialog=state.modal;
+  const find=text=>walk(dialog.content).find(n=>n.tag==='button'&&n.textContent===text);
+  const site=walk(dialog.content).find(n=>n.tag==='select');assert.equal(site.disabled,true);
+  assert.equal(calls[0].path,'publish-site-counts');
+  pending[0].resolve({counts:[{accountId:1,shopId:7,site:'CO',count:3},{accountId:1,shopId:7,site:'US',count:27},{accountId:2,shopId:7,site:'CO',count:2}]});
+  await new Promise(setImmediate);assert.equal(site.disabled,false);
+  site.value='CO';site.events.change();let small=walk(dialog.content).filter(n=>n.tag==='small');
+  assert.ok(small.some(n=>n.textContent.includes('ID 7 · 待发布 3')));assert.ok(small.some(n=>n.textContent.includes('ID 8 · 待发布 0')));
+  let quantities=walk(dialog.content).filter(n=>n.type==='number'&&!n.max);assert.equal(quantities[0].value,'3');
+  find('选择有待发布的店铺').action();let checks=walk(dialog.content).filter(n=>n.type==='checkbox');assert.deepEqual(checks.map(n=>n.checked),[true,false]);
+  quantities[0].value='2';quantities[0].events.input();site.value='US';site.events.change();assert.equal(quantities[0].value,'2');
+  site.value='CO';site.events.change();const request=find('预览所选店铺发布').action();
+  assert.equal(calls[1].path,'publish-preview');assert.equal(calls[1].body.filters.site,'CO');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].body.shopCounts)),[{accountId:1,shopId:7,publishCount:2},{accountId:2,shopId:7,publishCount:2}]);
+  pending[1].resolve(plan);await request;
+});
+
+test('older backend cannot select a site with unknown pending counts',async()=>{
+  const {ctx,state,nodes,calls}=publishQuantityHarness('demo');state.config.accounts=[{id:1,configured:true}];
+  state.config.targets=[{accountId:1,shops:[{shopId:7}],sites:[{key:'CO',value:'哥伦比亚'}]}];
   state.jobs.shopPendingCounts=new Map([['1:7',3]]);nodes.sharedJobsShop={value:'1:7'};
-  state.capabilities={publishSiteFilter:false};ctx.publishMultipleShops();
-  const walk=node=>[node,...node.children.flatMap(walk)], dialog=state.modal;
-  const site=walk(dialog.content).find(n=>n.tag==='select');site.value='CO';
+  state.capabilities={publishSiteFilter:true};ctx.publishMultipleShops();
+  const walk=node=>[node,...node.children.flatMap(walk)],dialog=state.modal,site=walk(dialog.content).find(n=>n.tag==='select');
+  assert.equal(site.disabled,true);site.value='CO';
   const preview=walk(dialog.content).find(n=>n.textContent==='预览所选店铺发布');
-  await assert.rejects(preview.action(),/后台尚未更新/);assert.equal(calls.length,0);
-  state.capabilities.publishSiteFilter=true;const request=preview.action();
-  assert.equal(calls[0].body.filters.site,'CO');assert.equal(calls[0].body.filters.keyword,'glove');
-  pending[0].resolve(plan);await request;
+  await assert.rejects(preview.action(),/站点数量尚未读取成功/);assert.equal(calls.length,0);
 });
 
 test('person options group source accounts, preserve aliases and selection including unknown',()=>{

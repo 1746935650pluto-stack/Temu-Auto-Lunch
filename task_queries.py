@@ -269,6 +269,24 @@ class TaskQueries:
                     transfer_counts[group] += row['n']
         return {'counts': counts, 'transferCounts': transfer_counts, 'totalAll': total_all}
 
+    def publish_site_counts(self):
+        """Count available jobs by account, shop and site without loading product data."""
+        counts = {}
+        for account, _, physical in self.shards():
+            with reader(physical.path) as db:
+                for row in db.execute("""SELECT j.shop_id, UPPER(COALESCE(j.site, '')) AS site, COUNT(*) AS n
+                    FROM automation_jobs j WHERE j.status='ready_publish'
+                    AND NOT EXISTS (SELECT 1 FROM automation_job_deletions d WHERE d.job_id=j.job_id)
+                    AND NOT EXISTS (SELECT 1 FROM automation_publish_batch_items i
+                        JOIN automation_publish_batches b ON b.batch_id=i.batch_id
+                        WHERE i.job_id=j.job_id AND b.status='running'
+                        AND i.status IN ('pending','publishing'))
+                    GROUP BY j.shop_id, UPPER(COALESCE(j.site, ''))"""):
+                    key = (account['id'], row['shop_id'], row['site'])
+                    counts[key] = counts.get(key, 0) + row['n']
+        return {'counts': [{'accountId': account, 'shopId': shop, 'site': site, 'count': count}
+                           for (account, shop, site), count in sorted(counts.items())]}
+
     def job_metadata(self, include_deleted=False, *, with_title=False, source_refs=None):
         result = []
         for account, number, physical in self.shards():
