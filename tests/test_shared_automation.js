@@ -120,6 +120,21 @@ test('task center renders realtime local queue cards and shows submitted times',
   assert.match(source, /采集时间：\$\{row\.collectedAt\}（妙手返回）/);
 });
 
+test('today store panel distinguishes empty results from a report that is still loading',()=>{
+  const node={hidden:true,children:[],replaceChildren(...items){this.children=items;},append(...items){this.children.push(...items);}};
+  const element=(tag,text='',cls='')=>({tag,textContent:text,className:cls,children:[],append(...items){this.children.push(...items);}});
+  const ctx=vm.createContext({$:id=>id==='sharedTodayStoreStats'?node:null,element,taskEventTime:x=>x,shopName:(a,s)=>`${a}/${s}`,Number});
+  vm.runInContext(functions('  function renderTodayStoreStats(', '  function consumeActivity('),ctx);
+  ctx.renderTodayStoreStats({date:'2026-11-25',stores:[],generatedAt:null,refreshing:true});
+  assert.equal(node.hidden,false);assert.match(node.children[1].textContent,/正在读取/);
+  ctx.renderTodayStoreStats({date:'2026-11-25',stores:[],generatedAt:'11:36',refreshing:false});
+  assert.match(node.children[2].textContent,/暂无成功保存或提交发布/);
+  ctx.renderTodayStoreStats({date:'2026-11-25',stores:[{accountId:1,shopId:7,processed:2,published:1}],generatedAt:'11:36'});
+  assert.match(node.children[2].children[0].textContent,/处理 2 件 · 发布 1 件/);
+  ctx.renderTodayStoreStats({date:'2026-11-25',stores:[{}],generatedAt:'11:36'});
+  assert.match(node.children[2].textContent,/数据暂不可用/);
+});
+
 test('running publication interval can be adjusted without cancelling the current submission', () => {
   assert.match(source, /api\('publish-interval',\{intervalSeconds:interval,confirmation:'UPDATE_SHARED_PUBLISH_INTERVAL'\}\)/);
   assert.match(source, /当前正在提交的商品不会中断；从下一件开始按新间隔执行/);

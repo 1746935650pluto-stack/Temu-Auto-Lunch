@@ -530,18 +530,27 @@
   }
   function renderTodayStoreStats(summary) {
     const node = $('sharedTodayStoreStats'); if (!node) return;
+    node.hidden=false;
+    node.replaceChildren(element('strong',`今日店铺处理与发布（北京时间 ${summary?.date || '今天'}）`));
+    if(summary?.generatedAt)node.append(element('small',`统计时间：${taskEventTime(summary.generatedAt)}（北京时间）`));
     const stores = summary?.stores;
-    if (!Array.isArray(stores) || !stores.length) {node.hidden=true;node.replaceChildren();return;}
+    if (!Array.isArray(stores) || !summary?.generatedAt) {
+      node.append(element('p',summary?.refreshing ? '正在读取今日统计…' : '今日统计暂未完成，请稍后刷新。'));
+      return;
+    }
     const valid = stores.filter(row => Number.isSafeInteger(row?.accountId) && row.accountId>0
       && Number.isSafeInteger(row?.shopId) && row.shopId>0
       && Number.isSafeInteger(row?.processed) && row.processed>=0
-      && Number.isSafeInteger(row?.published) && row.published>=0
-      && (row.processed || row.published));
-    if (!valid.length) {node.hidden=true;node.replaceChildren();return;}
-    node.hidden=false;node.replaceChildren(element('strong',`今日店铺处理与发布（北京时间 ${summary.date || '今天'}）`));
-    if(summary.generatedAt)node.append(element('small',`统计时间：${taskEventTime(summary.generatedAt)}（北京时间）`));
+      && Number.isSafeInteger(row?.published) && row.published>=0);
+    if (valid.length !== stores.length) {
+      node.append(element('p','今日统计数据暂不可用，请稍后刷新。')); return;
+    }
+    const nonzero = valid.filter(row => row.processed || row.published);
+    if (!nonzero.length) {
+      node.append(element('p','今日暂无成功保存或提交发布的记录；历史任务可在任务中心查看。')); return;
+    }
     const list=element('div','','shared-today-store-list');
-    valid.forEach(row=>list.append(element('span',`${shopName(row.accountId,row.shopId)}：处理 ${row.processed} 件 · 发布 ${row.published} 件`)));
+    nonzero.forEach(row=>list.append(element('span',`${shopName(row.accountId,row.shopId)}：处理 ${row.processed} 件 · 发布 ${row.published} 件`)));
     node.append(list);
   }
   function consumeActivity(activity) {
