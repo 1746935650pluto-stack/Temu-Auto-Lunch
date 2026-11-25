@@ -532,7 +532,6 @@
     const node = $('sharedTodayStoreStats'); if (!node) return;
     node.hidden=false;
     node.replaceChildren(element('strong',`今日店铺处理与发布（北京时间 ${summary?.date || '今天'}）`));
-    if(summary?.generatedAt)node.append(element('small',`统计时间：${taskEventTime(summary.generatedAt)}（北京时间）`));
     const stores = summary?.stores;
     if (!Array.isArray(stores) || !summary?.generatedAt) {
       node.append(element('p',summary?.refreshing ? '正在读取今日统计…' : '今日统计暂未完成，请稍后刷新。'));

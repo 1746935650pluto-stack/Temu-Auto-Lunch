@@ -128,11 +128,11 @@ test('today store panel distinguishes empty results from a report that is still 
   ctx.renderTodayStoreStats({date:'2026-11-25',stores:[],generatedAt:null,refreshing:true});
   assert.equal(node.hidden,false);assert.match(node.children[1].textContent,/正在读取/);
   ctx.renderTodayStoreStats({date:'2026-11-25',stores:[],generatedAt:'11:36',refreshing:false});
-  assert.match(node.children[2].textContent,/暂无成功保存或提交发布/);
+  assert.match(node.children[1].textContent,/暂无成功保存或提交发布/);
   ctx.renderTodayStoreStats({date:'2026-11-25',stores:[{accountId:1,shopId:7,processed:2,published:1}],generatedAt:'11:36'});
-  assert.match(node.children[2].children[0].textContent,/处理 2 件 · 发布 1 件/);
+  assert.match(node.children[1].children[0].textContent,/处理 2 件 · 发布 1 件/);
   ctx.renderTodayStoreStats({date:'2026-11-25',stores:[{}],generatedAt:'11:36'});
-  assert.match(node.children[2].textContent,/数据暂不可用/);
+  assert.match(node.children[1].textContent,/数据暂不可用/);
 });
 
 test('running publication interval can be adjusted without cancelling the current submission', () => {
