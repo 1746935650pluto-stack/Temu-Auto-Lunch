@@ -78,6 +78,8 @@ def job_failure_metadata(row):
         elif row.get('step') in {'claim', 'preflight', 'prepare', 'attributes', 'titles'} and category in {
                 'size_chart', 'attributes', 'database', 'transient'}:
             action, reason = 'resume', '任务在写入前暂停，将沿用原有检查和默认值流程重新处理'
+        elif row.get('step') == 'preflight' and str(row.get('message') or '').strip() == '错误':
+            action, reason = 'resume', '保存前预检返回错误，可重新核对后继续保存'
     return {'failureCategory': category, 'safeBatchAction': action,
             'safeBatchEligible': bool(action), 'safeBatchReason': reason}
 

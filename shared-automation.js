@@ -377,7 +377,11 @@
     publish.textContent = selected.length ? `发布选中 ${selected.length} 件` : '发布选中商品';
     publish.disabled = !!state.deleting || !!state.publishing || !writable || !selected.length || selected.some(r=>r.status !== 'ready_publish' || !r.available);
     retry.hidden = group !== 'attention';
-    retry.disabled = !!state.deleting || !!state.retrying || !!state.handlingFailures || !writable || !selected.length || selected.some(r=>!['failed','needs_review','interrupted'].includes(r.status) || !r.available);
+    const selectedPreflight = selected.some(r=>r.status === 'needs_input');
+    const retryablePreflight = r=>r.type !== 'transfer' && r.available && r.status === 'needs_input' && r.step === 'preflight' && String(r.message || '').trim() === '错误' && r.safeBatchEligible && r.safeBatchAction === 'resume';
+    retry.disabled = !!state.deleting || !!state.retrying || !!state.handlingFailures || !writable || !selected.length || (selectedPreflight
+      ? !selected.some(retryablePreflight)
+      : selected.some(r=>r.type === 'transfer' || !r.available || !['failed','needs_review','interrupted'].includes(r.status)));
     const known = $('sharedKnownFailures');
     if (known) {
       const count = (state.jobs.rows || []).filter(row=>row.safeBatchEligible).length;
@@ -388,7 +392,7 @@
     remove.hidden = false;
     remove.disabled = !!state.deleting || !!state.retrying || !!state.handlingFailures || !selected.some(canDeleteRecord);
     $('sharedSelectionHint').textContent = !writable && group === 'publish' ? '当前只读模式：可以预览数量，不能真实发布。按数量取当前筛选的前 N 件（跨页总量），不受勾选影响。' :
-      group === 'attention' ? `${state.config?.paused ? '自动处理已暂停；恢复后继续排队任务。' : !writable ? '当前只读模式，不能重试保存。' : ''}待处理任务请逐条查看原因；失败／中断可批量重试。删除仅移除本地记录。` :
+      group === 'attention' ? `${state.config?.paused ? '自动处理已暂停；恢复后继续排队任务。' : !writable ? '当前只读模式，不能重试保存。' : ''}可勾选预检“错误”批量重试；同时勾选的其他类型会跳过。删除仅移除本地记录。` :
       group === 'processing' ? '运行中的任务不能删除；删除排队任务会同时结束排队。' :
       group === 'publish' ? '按数量取当前筛选的前 N 件（跨页总量），不受勾选影响；也可发布或删除勾选商品。删除只移除本地任务，不删除妙手商品。' : '删除记录不会删除妙手商品。';
   }
@@ -970,15 +974,36 @@
   }
   async function retrySelected() {
     if (state.retrying || state.handlingFailures) return;
-    const selected = [...state.jobs.selected.values()];
-    if (!selected.length) throw Error('请勾选任务');
-    if (selected.length > 500) throw Error('每次最多重试 500 条任务');
-    if (selected.some(row=>row.type === 'transfer' || !['failed','needs_review','interrupted'].includes(row.status) || !row.available))
-      throw Error('仅可批量重试账号可用的失败或中断保存任务');
+    const requested = [...state.jobs.selected.values()];
+    if (!requested.length) throw Error('请勾选任务');
+    if (requested.length > 500) throw Error('每次最多重试 500 条任务');
+    const selectedPreflight=requested.some(row=>row.status === 'needs_input');
+    const selected=selectedPreflight ? requested.filter(row=>row.type !== 'transfer' && row.available && row.status === 'needs_input'
+      && row.step === 'preflight' && String(row.message || '').trim() === '错误' && row.safeBatchEligible && row.safeBatchAction === 'resume') : requested;
+    const ignored=requested.length-selected.length;
+    if (!selected.length || (!selectedPreflight && selected.some(row=>row.type === 'transfer' || !row.available || !['failed','needs_review','interrupted'].includes(row.status))))
+      throw Error('仅可批量重试账号可用的失败、中断或可安全继续的预检任务');
     state.retrying=true;updateTaskControls();
     const errors=[];let completed=0;
     try {
-      for (const row of selected) {
+      const paused = selected.filter(row=>row.status === 'needs_input');
+      for(let offset=0;offset<paused.length;offset+=25){
+        const chunk=paused.slice(offset,offset+25);
+        try {
+          const result=await api('failure-batch',{entries:chunk.map(row=>({accountId:row.accountId,jobId:row.jobId})),confirmation:'HANDLE_SHARED_FAILURES'});
+          const accepted=new Set((result.processed || []).map(item=>`${item.accountId}:${item.jobId}`));
+          for(const row of chunk){
+            if(accepted.has(`${row.accountId}:${row.jobId}`))state.jobs.selected.delete(row.key);
+            else {
+              const issue=[...(result.failed || []),...(result.skipped || [])].find(item=>item.accountId===row.accountId && item.jobId===row.jobId);
+              errors.push(`${row.key}: ${issue?.reason || '任务未接受，请刷新后核查'}`);
+            }
+          }
+        } catch(error) {chunk.forEach(row=>errors.push(`${row.key}: ${error.message}`));}
+        completed+=chunk.length;
+        notice(`正在提交重试：${completed}/${selected.length} 条${errors.length ? ` · 失败 ${errors.length} 条` : ''}`);
+      }
+      for (const row of selected.filter(row=>row.status !== 'needs_input')) {
         try {
           await api('action',{accountId:row.accountId,jobId:row.jobId,action:'retry',confirmation:'SHARED_JOB_ACTION'});
           state.jobs.selected.delete(row.key);
@@ -990,7 +1015,7 @@
       state.retrying=false;syncSelection('jobs');
       await refresh('jobs');
     }
-    notice(errors.length ? `已提交 ${selected.length-errors.length} 条；失败 ${errors.length} 条：${errors.join('；')}` : '重试已全部提交，完成后等待手动发布');
+    notice(`已提交 ${selected.length-errors.length} 条；失败 ${errors.length} 条；跳过其他记录 ${ignored} 条。已提交不代表保存成功，完成后仍需手动发布。${errors.length ? ' '+errors.slice(0,5).join('；') : ''}`);
   }
   async function handleKnownFailures() {
     if (state.handlingFailures || state.retrying || state.deleting) return;

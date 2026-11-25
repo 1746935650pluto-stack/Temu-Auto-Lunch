@@ -103,6 +103,35 @@ test('failed retries retain only failed selection and account-qualified referenc
   assert.deepEqual(seen.map(body=>[body.accountId,body.jobId]),[[1,1],[2,2]]);
 });
 
+test('selected preflight errors use server revalidation and preserve rejected selections',async()=>{
+  const {context,state,jobs}=setup();
+  const safe={...jobs[0],status:'needs_input',step:'preflight',message:'错误',safeBatchEligible:true,safeBatchAction:'resume'};
+  const stale={...jobs[1],status:'needs_input',step:'preflight',message:'错误',safeBatchEligible:true,safeBatchAction:'resume'};
+  const unrelated={...jobs[2],status:'needs_review',step:'save',message:'远端结果不确定'};
+  state.jobs.selected.set(safe.key,safe);state.jobs.selected.set(stale.key,stale);state.jobs.selected.set(unrelated.key,unrelated);
+  const calls=[];context.refresh=async()=>{};
+  context.api=async(route,body)=>{calls.push({route,body});return {counts:{processed:1,failed:0,skipped:1},processed:[{accountId:safe.accountId,jobId:safe.jobId}],skipped:[{accountId:stale.accountId,jobId:stale.jobId,reason:'状态已变化'}]};};
+  await context.retrySelected();assert.equal(calls.length,1);assert.equal(calls[0].body.entries.length,2);assert.equal(calls[0].route,'failure-batch');
+  assert.deepEqual([...state.jobs.selected.keys()],[stale.key,unrelated.key]);
+});
+
+test('many selected preflight tasks are submitted in bounded batches',async()=>{
+  const {context,state,jobs}=setup(),calls=[];
+  for(const original of jobs.slice(0,60)){
+    const row={...original,status:'needs_input',step:'preflight',message:'错误',safeBatchEligible:true,safeBatchAction:'resume'};
+    state.jobs.selected.set(row.key,row);
+  }
+  context.refresh=async()=>{};context.api=async(route,body)=>{calls.push({route,body});return {processed:body.entries,failed:[],skipped:[]};};
+  await context.retrySelected();assert.deepEqual(calls.map(call=>call.body.entries.length),[25,25,10]);
+  assert.ok(calls.every(call=>call.route==='failure-batch'));assert.equal(state.jobs.selected.size,0);
+});
+
+test('selected preflight task without safe evidence is never submitted',async()=>{
+  const {context,state,jobs}=setup();const unsafe={...jobs[0],status:'needs_input',step:'preflight',message:'错误',safeBatchEligible:false};
+  state.jobs.selected.set(unsafe.key,unsafe);let requests=0;context.api=async()=>{requests++;};
+  await assert.rejects(context.retrySelected(),/仅可批量重试/);assert.equal(requests,0);
+});
+
 test('classified safe batch excludes uncertain records, blocks repeat clicks and refreshes once',async()=>{
   const {context,state,calls,notices,jobs}=setup();context.window.confirm=()=>true;
   const transfer={type:'transfer',key:'transfer:copy-a',transfer_id:'copy-a',safeBatchEligible:true};

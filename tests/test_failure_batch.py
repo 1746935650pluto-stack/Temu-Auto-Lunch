@@ -35,6 +35,15 @@ class FailureClassificationTests(unittest.TestCase):
         self.assertFalse(job_failure_metadata({'status': 'needs_input', 'step': 'save', 'message': 'timeout'})['safeBatchEligible'])
         self.assertFalse(job_failure_metadata({'status': 'needs_input', 'step': 'prepare', 'message': '属性', 'available': False})['safeBatchEligible'])
 
+    def test_plain_error_only_allows_resuming_needs_input_preflight(self):
+        safe = job_failure_metadata({'status':'needs_input','step':'preflight','message':'错误'})
+        self.assertEqual(safe['failureCategory'], 'unknown')
+        self.assertEqual(safe['safeBatchAction'], 'resume')
+        for status, step, message in [('needs_review','preflight','错误'),('needs_input','save','错误'),
+                ('needs_input','publish','错误'),('needs_input','claim','错误'),('needs_input','preflight','其他错误')]:
+            with self.subTest(status=status,step=step,message=message):
+                self.assertFalse(job_failure_metadata({'status':status,'step':step,'message':message})['safeBatchEligible'])
+
     def test_deepseek_connection_failure_is_resumable_only_before_remote_writes(self):
         safe = job_failure_metadata({'status': 'needs_input', 'step': 'attributes',
                                      'message': 'Unable to reach DeepSeek API'})
@@ -135,6 +144,17 @@ class FailureBatchTests(unittest.TestCase):
         self.assertEqual(body['data']['counts']['skipped'], 1)
         self.assertEqual(self.calls, [])
 
+    def test_plain_preflight_error_batch_queues_only_eligible_jobs_without_remote_io(self):
+        pool, ref = self.paused(step='preflight',message='错误')
+        _, unsafe = self.paused(index=2,step='save',message='错误')
+        result = self.batch([ref,unsafe])
+        self.assertEqual(result['counts'], {'processed':1,'failed':0,'skipped':1,'total':2})
+        self.assertEqual(pool.get_job(ref['jobId'])['status'],'queued')
+        self.assertFalse(pool.get_job(ref['jobId'])['publishAfterSave'])
+        self.assertEqual(pool.get_job(unsafe['jobId'])['status'],'needs_input')
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.batch([ref])['counts']['skipped'],1)
+
     def test_template_refresh_reuses_default_selection_and_never_publishes(self):
         pool, ref = self.paused(step='freight')
         result = self.batch([ref])
@@ -173,6 +193,16 @@ class FailureBatchTests(unittest.TestCase):
             self.assertEqual(worker.call_args.args[1], ref['jobId'])
             self.assertTrue(worker.call_args.kwargs['defer_publish'])
         self.assertEqual(self.calls, [])
+
+    def test_multiple_preflight_resumes_share_one_scheduler_wakeup(self):
+        pool, first = self.paused(1,step='preflight',message='错误')
+        _, second = self.paused(2,step='preflight',message='错误')
+        result = self.batch([first, second])
+        self.assertEqual(result['counts']['processed'],2)
+        self.assertEqual(pool.get_job(first['jobId'])['status'],'queued')
+        self.assertEqual(pool.get_job(second['jobId'])['status'],'queued')
+        self.assertEqual(self.launch.call_count,1)
+        self.assertEqual(self.calls,[])
 
     def test_manual_resume_is_visible_while_scheduler_busy_and_duplicate_is_rejected(self):
         pool, ref = self.paused(step='titles', message='The read operation timed out')

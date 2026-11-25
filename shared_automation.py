@@ -2284,6 +2284,7 @@ class SharedAutomation:
                     raise ValueError('任务引用必须包含账号和有效任务 ID')
                 normalized[(account, job_id)] = {'accountId': account, 'jobId': job_id}
         result = {'processed': [], 'failed': [], 'skipped': []}
+        queued_jobs = False
         for ref in normalized.values():
             try:
                 if 'transferId' in ref:
@@ -2309,18 +2310,22 @@ class SharedAutomation:
                     outcome = self.resume_transfer({**ref, 'confirmation': 'RESUME_SHARED_TO_QUEUE'}, safe_batch=True)
                     reason = '已加入副本准备队列；保存完成后仍需手动发布'
                 else:
-                    outcome = self.action({**ref, 'action': action, 'confirmation': 'SHARED_JOB_ACTION'}, safe_batch=True)
+                    outcome = self.action({**ref, 'action': action, 'confirmation': 'SHARED_JOB_ACTION'}, safe_batch=True, launch=(action != 'resume'))
+                    queued_jobs = queued_jobs or (action == 'resume' and outcome.get('accepted') is True)
                     reason = (outcome.get('message') or '已提交重新检查；保存结果请在任务列表查看')
                 result['processed'].append({**ref, 'action': action, 'reason': reason,
                     'accepted': bool(outcome.get('accepted') or outcome.get('queued')),
                     'autoQueuedJobs': outcome.get('autoQueuedJobs', 0)})
             except Exception as error:
                 result['failed'].append({**ref, 'reason': str(error)})
+        if queued_jobs:
+            RUNTIME.work_available.set()
+            Thread(target=self.run_jobs, daemon=True, name='shared-job-recovery').start()
         result['counts'] = {key: len(value) for key, value in result.items()}
         result['counts']['total'] = len(normalized)
         return result
 
-    def action(self, body, *, safe_batch=False):
+    def action(self, body, *, safe_batch=False, launch=True):
         account, job_id, action = positive(body.get('accountId')), body.get('jobId'), body.get('action')
         job = self.job(account, job_id)
         pool = self.b.automation_pool(account)
@@ -2360,11 +2365,10 @@ class SharedAutomation:
                 queued = pool.retry_job(job_id, queue_only=True)
             else:
                 queued = pool.resume_job(job_id, str(body.get('selectedId', '')), queue_only=True)
-        RUNTIME.work_available.set()
-        # A competing scheduler may be finishing its last pass. A successor
-        # ensures this committed queue cannot miss its wake-up; all execution
-        # still goes through the normal shared/per-account concurrency limits.
-        Thread(target=self.run_jobs, daemon=True, name='shared-job-recovery').start()
+        if launch:
+            RUNTIME.work_available.set()
+            # A successor covers a scheduler finishing its last pass.
+            Thread(target=self.run_jobs, daemon=True, name='shared-job-recovery').start()
         return {'accepted': True, 'status': 'queued', 'jobId': queued['jobId']}
 
     def http(self, handler, method, path, query):
