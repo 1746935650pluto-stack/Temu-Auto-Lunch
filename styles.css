@@ -833,6 +833,11 @@ button.statistics-kpi:focus-visible { outline:2px solid #3b82f6; outline-offset:
 .statistics-chart-legend { display:flex; flex-wrap:wrap; gap:10px 18px; margin:0 4px 10px; color:#64748b; font-size:11px; }
 .statistics-chart-legend>span { display:flex; align-items:center; gap:6px; }
 .statistics-chart-legend i { display:inline-block; width:8px; height:8px; border-radius:3px; }
+.statistics-chart-account, .statistics-chart-select-all { display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border:1px solid transparent; border-radius:6px; background:transparent; color:#536b8c; font:inherit; cursor:pointer; }
+.statistics-chart-account:hover, .statistics-chart-account:focus-visible, .statistics-chart-select-all:hover:not(:disabled), .statistics-chart-select-all:focus-visible { background:#edf4ff; border-color:#c9dcfb; outline:none; }
+.statistics-chart-account[aria-pressed='false'] { opacity:.45; text-decoration:line-through; }
+.statistics-chart-select-all { color:#1d61d7; border-color:#d8e5f8; }
+.statistics-chart-select-all:disabled { opacity:.45; cursor:default; }
 .statistics-plot-scroll { max-width:100%; overflow-x:auto; }
 .statistics-plot-scroll:empty { display:grid; min-height:280px; place-items:center; }
 .statistics-plot-scroll:empty:before { content:'等待统计数据'; color:#b1bdce; font-size:13px; }
@@ -1100,3 +1105,5 @@ button.proportion-row:hover, .proportion-row.is-selected { border-color: #b5cefa
 .visible-sites-content .collection-manager-heading { gap:12px; flex-wrap:wrap; }
 
 .shared-modal-shell.shared-multi-publish-shell { width: min(1450px, 100%); }
+
+.statistics-chart-select-tip { color:#8a9ab0; margin-left:4px; }

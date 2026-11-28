@@ -262,7 +262,7 @@ test('long ranges keep one bar per visible account and date in a scrollable char
   const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
   const svg=s.el('statisticsChartPlot').children[0];
   assert.equal(svg.children.filter(node=>node.attrs['data-chart-account']).length,210);
-  assert.ok(Number(svg.attrs.width)>760);assert.equal(s.el('statisticsChartLegend').children.length,7);
+  assert.ok(Number(svg.attrs.width)>760);assert.equal(s.el('statisticsChartLegend').children.filter(node=>node.attrs['data-account-id']).length,7);
 });
 
 test('single-day comparisons spread account bars across the plot and label each account', async () => {
@@ -356,4 +356,35 @@ test('yesterday handles Beijing year boundary and ignores earlier stale response
   assert.equal(s.requests[0].options.signal.aborted,true);
   reply(s,1,result('fresh'));await tick();reply(s,0,result('stale'));await first;
   assert.match(s.el('statisticsRows').textContent,/fresh/);assert.doesNotMatch(s.el('statisticsRows').textContent,/stale/);
+});
+
+
+test('chart account selection is local, scales selected data, supports empty and restores on both chart views',async()=>{
+  const s=setup(),data=result('Alpha'),base=data.rows[0];
+  data.rows=[{...base,orders:100},{...base,accountId:2,accountName:'Beta',orders:10},{...base,accountId:3,accountName:'Gamma',orders:20}];
+  data.totals.orders=130;const pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+  const legend=()=>s.el('statisticsChartLegend'),account=id=>legend().children.find(node=>node.attrs['data-account-id']===String(id));
+  const chartBars=()=>s.el('statisticsChartPlot').children[0]?.children.filter(node=>node.attrs['data-chart-account'])||[];
+  assert.equal(chartBars().length,3);account(1).focus();await account(1).dispatch('click');
+  assert.equal(account(1).attrs['aria-pressed'],'false');assert.equal(s.document.activeElement,account(1));
+  assert.deepEqual(chartBars().map(n=>n.attrs['data-chart-account']),['2','3']);
+  assert.ok(Number(chartBars()[1].children[1].attrs.height)>190,'scale excludes hidden high value');
+  assert.match(s.el('statisticsCards').children[0].textContent,/130/);assert.equal(s.el('statisticsRows').children.length,3);assert.equal(s.requests.length,1);
+  await s.el('statisticsPieView').dispatch('click');assert.equal(legend().hidden,false);
+  const pie=s.el('statisticsChartPlot').querySelectorAll('button');assert.equal(pie.length,2);assert.match(pie[1].attrs['aria-label'],/Gamma.*66.67%/);
+  await legend().children.find(n=>n.textContent==='清空选择').dispatch('click');assert.match(s.el('statisticsChartHint').textContent,/请选择至少一个账号/);assert.equal(s.el('statisticsChartPlot').children.length,0);
+  await legend().children.find(n=>n.textContent==='显示全部').dispatch('click');assert.equal(s.el('statisticsChartPlot').querySelectorAll('button').length,3);
+  await s.el('statisticsChartView').dispatch('click');assert.equal(chartBars().length,3);assert.equal(s.requests.length,1);
+});
+
+
+test('chart selection survives refreshed statistics without affecting account filter',async()=>{
+ const s=setup(),data=result('Alpha'),base=data.rows[0];data.accounts=[{id:1,name:'Alpha'},{id:2,name:'Beta'}];
+ data.rows=[base,{...base,accountId:2,accountName:'Beta',orders:10}];
+ let pending=s.window.dataStatistics.open();s.requests[0].resolve({ok:true,json:async()=>({data})});await pending;
+ const account=id=>s.el('statisticsChartLegend').children.find(node=>node.attrs['data-account-id']===String(id));
+ await account(1).dispatch('click');pending=s.window.dataStatistics.open();s.requests[1].resolve({ok:true,json:async()=>({data})});await pending;
+ assert.equal(account(1).attrs['aria-pressed'],'false');assert.equal(account(2).attrs['aria-pressed'],'true');
+ assert.deepEqual(s.el('statisticsChartPlot').children[0].children.filter(node=>node.attrs['data-chart-account']).map(node=>node.attrs['data-chart-account']),['2']);
+ assert.equal(new URL(s.requests[1].url,'http://localhost').searchParams.get('accountId'),'all');
 });

@@ -4,6 +4,8 @@
   const metrics = ['collected', 'tasks', 'saved', 'submitted', 'editFailed', 'publishFailed', 'needsInput', 'orders', 'packages', 'quantity'];
   const headings = ['日期', '妙手账号', '采集入池', '新建任务', '保存成功', '发布已提交', '编辑异常', '发布异常', '待选择', '订单数', '包裹数', '已知件数'];
   let revision = 0, current = null, requestController = null, viewMode = 'bar';
+  // Chart-only visibility: new accounts are included unless explicitly hidden.
+  const hiddenChartAccounts = new Set();
   let pageActive = false;
   let autoPollTimer = null, autoPollController = null, autoRevision = 0;
   const autoCompletions = new Map();
@@ -19,7 +21,7 @@
     el('statisticsTable').hidden = !table;
     el('statisticsChartPanel').hidden = table;
     el('statisticsMetric').disabled = table;
-    el('statisticsChartLegend').hidden = mode === 'pie';
+    el('statisticsChartLegend').hidden = false;
     el('statisticsChartPlot').setAttribute('aria-label', mode === 'pie' ? '各账号数据占比饼状图' : '每日柱状图，可横向滚动');
     if (!table && current) renderChart();
     if (table) el('statisticsChartTitle').textContent = '每日账号明细';
@@ -38,14 +40,43 @@
     el('statisticsChartTitle').textContent = viewMode === 'pie' ? `${label} · 账号占比` : el('statisticsTable').hidden ? `${label}趋势` : '每日账号明细';
     if (!current?.rows.length) { if(current)el('statisticsChartCaption').textContent=`${current.start} — ${current.end} · 0 个账号`;clearChart('当前筛选没有可展示的每日数据。'); return; }
     const dates = [...new Set(current.rows.map(row => row.date))].sort();
-    const accounts = [...new Map(current.rows.map(row => [row.accountId, {id: row.accountId, name: row.accountName}])).values()].sort((a, b) => a.id - b.id);
+    const availableAccounts = [...new Map(current.rows.map(row => [row.accountId, {id: row.accountId, name: row.accountName}])).values()].sort((a, b) => a.id - b.id);
+    const accounts = availableAccounts.filter(account => !hiddenChartAccounts.has(String(account.id)));
+    const legend = el('statisticsChartLegend');
+    const choices = availableAccounts.map(account => {
+      const key = String(account.id), selected = !hiddenChartAccounts.has(key);
+      const item = document.createElement('button'), swatch = document.createElement('i'), name = document.createElement('span');
+      item.type = 'button'; item.className = 'statistics-chart-account';
+      item.setAttribute('aria-pressed', String(selected)); item.setAttribute('aria-label', `${selected ? '隐藏' : '显示'}账号 ${account.name}`);
+      item.setAttribute('data-account-id', key); swatch.style.backgroundColor = colors[(account.id - 1) % colors.length];
+      name.textContent = account.name; item.append(swatch, name);
+      item.addEventListener('click', () => {
+        const wasFocused = document.activeElement === item;
+        if (hiddenChartAccounts.has(key)) hiddenChartAccounts.delete(key); else hiddenChartAccounts.add(key);
+        renderChart();
+        if (wasFocused) Array.from(legend.children)[availableAccounts.findIndex(account => String(account.id) === key)]?.focus();
+      });
+      return item;
+    });
+    const showAll = document.createElement('button'); showAll.type = 'button'; showAll.className = 'statistics-chart-select-all';
+    showAll.textContent = '显示全部'; showAll.disabled = accounts.length === availableAccounts.length;
+    showAll.addEventListener('click', () => { hiddenChartAccounts.clear(); renderChart(); });
+    const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'statistics-chart-select-all';
+    clear.textContent = '清空选择'; clear.disabled = !accounts.length;
+    clear.addEventListener('click', () => { availableAccounts.forEach(account => hiddenChartAccounts.add(String(account.id))); renderChart(); });
+    const tip = document.createElement('span'); tip.className = 'statistics-chart-select-tip'; tip.textContent = '点击账号筛选';
+    legend.replaceChildren(...choices, tip, clear, showAll);
     const singleDay = dates.length === 1;
     if (el('statisticsTable').hidden && singleDay) el('statisticsChartTitle').textContent = `${label}对比`;
     el('statisticsChartCaption').textContent = `${current.start} — ${current.end} · ${accounts.length} 个账号`;
-    const values = new Map(current.rows.map(row => { const value = metric === 'failed' ? Number(row.editFailed || 0) + Number(row.publishFailed || 0) : Number(row[metric]); return [`${row.date}:${row.accountId}`, Number.isFinite(value) ? Math.max(0, value) : 0]; }));
+    const values = new Map(current.rows.filter(row => !hiddenChartAccounts.has(String(row.accountId))).map(row => { const value = metric === 'failed' ? Number(row.editFailed || 0) + Number(row.publishFailed || 0) : Number(row[metric]); return [`${row.date}:${row.accountId}`, Number.isFinite(value) ? Math.max(0, value) : 0]; }));
+    if (!accounts.length) {
+      el('statisticsChartPlot').replaceChildren();
+      el('statisticsChartHint').textContent = '请选择至少一个账号，或点击显示全部。';
+      return;
+    }
     if (viewMode === 'pie') {
       el('statisticsChartTitle').textContent = `${label} · 账号占比`;
-      el('statisticsChartLegend').replaceChildren();
       const result = window.proportionCharts.render(el('statisticsChartPlot'), {
         label, description: `${current.start} 至 ${current.end}各账号${label}占比`,
         entries: accounts.map(account => ({key:String(account.id),label:account.name,
@@ -104,10 +135,6 @@
       });
     });
     el('statisticsChartPlot').replaceChildren(svg);
-    el('statisticsChartLegend').replaceChildren(...accounts.map(account => {
-      const item = document.createElement('span'), swatch = document.createElement('i'), name = document.createElement('span');
-      swatch.style.backgroundColor = color(account); name.textContent = account.name; item.append(swatch, name); return item;
-    }));
     el('statisticsChartHint').textContent = maximum ? '悬停或聚焦柱体查看数值' + (metric === 'orders' ? ' · 点击柱体查看对应账号订单' : '') : '当前筛选下该指标均为 0。';
   }
   function formatOrderAutoSync(autoSync) {
